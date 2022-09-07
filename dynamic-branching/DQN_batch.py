@@ -132,8 +132,14 @@ class DQN:
             target_weights[i] = weights[i] * self.tau + target_weights[i] * (1 - self.tau)
         self.target_model.set_weights(target_weights)
     
-    def calc_reward(self, state):
-        return 1
+    def calc_reward(self, state, next_state):
+        # Not sure if it's objval we want. Should double-check
+        if next_state['objval'] < state['objval']:
+            return 100
+        if next_state['objval'] > state['objval']:
+            return 0
+        else: 
+            return 1
 
     def save_model(self, fn):
         self.model.save(fn)
@@ -159,7 +165,7 @@ class BranchCB(CPX_CB.BranchCallback):
         feas   = self.get_feasibilities()
 
         node_id = self.get_node_ID() # node id of the current node
-        parent_node_data = self.get_node_data()
+        last_node_data = self.get_node_data()
         incumbentval = self.get_incumbent_objective_value() # value of the incumbent solution
         cutoff = self.get_cutoff() # cutoff value
         
@@ -169,10 +175,11 @@ class BranchCB(CPX_CB.BranchCallback):
                  'cutoff':        cutoff, # cutoff value, i.e. the best known primal bound + 1
                  'gap':           (objval - incumbentval) / incumbentval}
         action = dqn.get_action(state)
-        # print(f"Node_id: {node_id}, state: {state}")
 
         node_data = {'node_id': self.get_node_ID(), 'state': state, 'action': action}
 
+        # Debugging
+        # print(f"Node_id: {node_id}, state: {state}")
         # print(f'Branching type {BRANCHING_TYPES[action]}, -- Times called: ', self.times_called)
 
         selected_var = -1
@@ -218,16 +225,18 @@ class BranchCB(CPX_CB.BranchCallback):
             self.make_branch(objval, node_data = node_data)
             self.make_branch(objval, node_data = node_data)
 
-        if parent_node_data is not None:
-            info = (parent_node_data['state']['objval'], parent_node_data['action'], dqn.calc_reward(state), state['objval'], False)
+        if last_node_data is not None:
+            last_state = last_node_data['state']
+            last_action = last_node_data['action']
+            last_reward = dqn.calc_reward(last_state, state)
+
+            # Debugging
+            info = (last_state, last_action, last_reward, state['objval'], False)
             print(info)
+            print(f"Reward: {last_reward}")
             # pdb.set_trace()
-            dqn.remember(
-                parent_node_data['state'],
-                parent_node_data['action'],
-                dqn.calc_reward(state),
-                state,
-                False)
+
+            dqn.remember(last_state, last_action, last_reward, state, False)
             dqn.replay()
             dqn.target_train()
 
