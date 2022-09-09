@@ -244,8 +244,8 @@ class BranchCB(CPX_CB.BranchCallback):
         # if self.report_count % 500 == 0 and self.report_count > 0:
         #     pd.DataFrame(self.states_to_process).to_csv('saved/states_to_process.csv')  
 
-def init_cplex_model():
-    v, w, C, K, N = instance_db.get_instance(1)
+def init_cplex_model(instance_num):
+    v, w, C, K, N = instance_db.get_instance(instance_num)
 
     cplex = Model('multiple knapsack', log_output=False)
     cplex.data = -1
@@ -307,12 +307,18 @@ def init_cplex_model():
     return cplex, branch_callback
 
 if __name__ == "__main__":
-    episodes = 1
-    
+    total_iterations = 0
+    max_episodes = 1
     dqn = DQN()
 
-    for episode in range(episodes):
-        cplex, branch_callback = init_cplex_model()
+    for episode in range(max_episodes):
+        instance_num = 1 #should select different instances across time
+        cplex, branch_callback = init_cplex_model(instance_num)
+        
         cplex.solve()
+
+        total_iterations += branch_callback.times_called
+        print(f"Nodes opened: {branch_callback.times_called}")
+
         plotter.plot_action_history(branch_callback.action_history, BRANCHING_TYPES)
         plotter.plot_reward_history(branch_callback.reward_history)
