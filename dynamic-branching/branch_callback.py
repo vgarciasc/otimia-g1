@@ -1,6 +1,7 @@
 from math import fabs, floor
 import pdb
 import sys
+import os
 import numpy as np
 import cplex as CPX
 import cplex.callbacks as CPX_CB
@@ -9,6 +10,7 @@ from docplex.mp.model import Model
 from DQN_batch import DQN
 import instance_db
 import utils
+import plotter
 
 class BranchCB(CPX_CB.BranchCallback):
     def init(self, _lista):
@@ -94,7 +96,6 @@ class BranchCB(CPX_CB.BranchCallback):
     def branch_pseudocost(self, node_data):
         objval = self.get_objective_value()
         branches = [self.get_branch(0)[1][0], self.get_branch(1)[1][0]]
-
         for branch in branches:
             node_data_clone = node_data.copy()
             node_data_clone['branch_history'] = node_data['branch_history'][:]
@@ -142,40 +143,46 @@ class BranchCB(CPX_CB.BranchCallback):
         state = np.array([[depth, gap]])
         action = dqn.get_action(state)
 
-        node_data = {'node_id': self.get_node_ID(), 'state': state, 'action': action}
+        node_data = {'branch_history': [],'node_id': self.get_node_ID(), 'state': state, 'action': action}
+        if last_node_data != None:
+          node_data['branch_history'] = last_node_data['branch_history'][:]
+
         # node_data = utils.get_data(self)
         
         # Debugging
         # print(f"Node_id: {node_id}, state: {state}")
         # print(f'Branching type {BRANCHING_TYPES[action]}, -- Times called: ', self.times_called)
 
-        action = 1
-        if action == 0:
-            self.branch_most_fractional(node_data)
-        elif action == 1:
-            self.branch_random(node_data)
-        elif action == 2:
-            self.branch_strong(node_data)
-        elif action == 3:
-            self.branch_pseudocost(node_data)
+        
+        if self.get_num_branches() == 0:
+          return
+        else:
+          if action == 0:
+              self.branch_most_fractional(node_data)
+          elif action == 1:
+              self.branch_random(node_data)
+          elif action == 2:
+              self.branch_strong(node_data)
+          elif action == 3:
+              self.branch_pseudocost(node_data)
 
-        # if last_node_data is not None:
-        #     last_state = last_node_data['state']
-        #     last_action = last_node_data['action']
-        #     last_reward = dqn.calc_reward(last_state, state)
+          if last_node_data is not None:
+              last_state = last_node_data['state']
+              last_action = last_node_data['action']
+              last_reward = dqn.calc_reward(last_state, state)
+              self.get_MIP_relative_gap()
+              self.action_history.append(last_action)
+              self.reward_history.append(last_reward)
 
-        #     self.action_history.append(last_action)
-        #     self.reward_history.append(last_reward)
+              # Debugging
+              #info = (last_state, last_action, last_reward, state[0], False)
+              #print(info)
+              #print(f"Reward: {last_reward}")
+              # pdb.set_trace()
 
-        #     # Debugging
-        #     # info = (last_state, last_action, last_reward, state[0], False)
-        #     # print(info)
-        #     # print(f"Reward: {last_reward}")
-        #     # pdb.set_trace()
-
-        #     dqn.remember(last_state, last_action, last_reward, state, False)
-        #     dqn.replay()
-        #     dqn.target_train()
+              dqn.remember(last_state, last_action, last_reward, state, False)
+              dqn.replay()
+              dqn.target_train()
 
         # self.report_count += 1
         # if self.report_count % 500 == 0 and self.report_count > 0:
@@ -195,12 +202,12 @@ def init_cplex_model(instance_num, verbose=False):
     model.set_objective("max", obj_fn)
 
     # Transforming DOCPLEX.MP.MODEL into a CPX.CPLEX object
-    filename = "data/problem.lp"
+    filename = "problem.lp"
     model.dump_as_lp(filename)
     cplex = CPX.Cplex(filename)
 
     # Displays node information every X nodes
-    cplex.parameters.mip.interval.set(1)
+    # cplex.parameters.mip.interval.set(1)
 
     # Turning off presolving callbacks
     cplex.parameters.preprocessing.presolve.set(0) # Decides whether CPLEX applies presolve during preprocessing to simplify and reduce problems
@@ -229,20 +236,22 @@ def init_cplex_model(instance_num, verbose=False):
     return cplex, branch_callback
 
 if __name__ == "__main__":
-    episodes = 1
+    episodes = 100
     
     dqn = DQN()
     action_history = []
     reward_history = []
 
     for episode in range(episodes):
-        cplex, branch_callback = init_cplex_model(instance_num=2, verbose=True)
+        cplex, branch_callback = init_cplex_model(instance_num=2, verbose=False)
 
         cplex.solve()
         
         action_history = np.append(action_history, branch_callback.action_history)
         reward_history = np.append(reward_history, branch_callback.reward_history)
-        # plotter.plot_action_history(action_history, BRANCHING_TYPES)
-        # plotter.plot_reward_history(reward_history)
+        print(f'Mean reward at episode {episode}: ', np.mean(reward_history))
+        print(f'Mean DQN Loss at episode {episode}: ',np.mean(dqn.loss_history))
+        #plotter.plot_action_history(action_history, BRANCHING_TYPES)
+        #plotter.plot_reward_history(reward_history)
     
     print('Done')

@@ -28,7 +28,7 @@ BRANCHING_TYPES = ["Most Fractional", "Random", "Strong", "Minimum Infeasibility
 
 class DQN:
     def __init__(self, memory_size=5*10**5, batch_size=32, gamma=0.99,
-        exploration_max=1.0, exploration_min=0.01, exploration_decay=0.99999,
+        exploration_max=1.0, exploration_min=0.1, exploration_decay=0.999,
         learning_rate=0.001, tau=0.125):
         
         self.memory = deque(maxlen=memory_size)
@@ -71,7 +71,7 @@ class DQN:
         q_values = self.model(state).numpy()
         best_action = np.argmax(q_values[0])
         return best_action
-
+      
     def remember(self, _state, action, reward, _next_state, done):
         state = _state
         next_state = _next_state
@@ -99,7 +99,7 @@ class DQN:
         states = np.array([i[0] for i in states])
         targets = np.array([i[0] for i in targets])
         self.loss_history.append(self.model.fit(states, targets,verbose=0).history['loss'][0])
-
+        
     def target_train(self):
         weights = self.model.get_weights()
         target_weights = self.target_model.get_weights()
