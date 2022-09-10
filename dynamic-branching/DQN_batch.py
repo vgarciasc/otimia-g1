@@ -48,7 +48,7 @@ class DQN:
         self.tau = tau
 
         self.action_space = Discrete(len(BRANCHING_TYPES))
-        self.observation_space = Box(low=np.array([0]), high=np.array([10**5]), dtype=np.float32)
+        self.observation_space = Box(low=np.array([0,0]), high=np.array([2*10**4,1]), dtype=np.float64)
 
         self.model = self.create_model()
         self.target_model = self.create_model()
@@ -79,10 +79,9 @@ class DQN:
         best_action = np.argmax(q_values[0])
         return best_action
 
-    def remember(self, state, action, reward, next_state, done):
-        state = np.array([state['objval']])
-        next_state = np.array([next_state['objval']])
-        
+    def remember(self, _state, action, reward, _next_state, done):
+        state = _state
+        next_state = _next_state
         self.memory.append([state, action, reward, next_state, done])
 
     def replay(self):
@@ -90,27 +89,27 @@ class DQN:
             return 
         
         samples = random.sample(self.memory, self.batch_size)
-        states = np.array([sample[0] for sample in samples])
         states, actions, rewards, next_states, dones = zip(*samples)
         # targets = self.target_model.predict(states, batch_size=self.batch_size, verbose=False).numpy()[0]
         # Qs_future = [max(self.target_model(i).numpy()[0]) for i in next_states]
         targets = []
         for state, action, reward, next_state, done in samples:
             # target = self.target_model.predict(state, verbose=0)
-            target = self.target_model(state).numpy()[0]
+            target = self.target_model(state).numpy()
             if done:
-                target[action] = reward
+                target[0][action] = reward
             else:
                 # Q_future = max(self.target_model.predict(next_state, verbose=0)[0])
                 Q_future = max(self.target_model(next_state)[0])
-                target[action] = reward + Q_future * self.gamma
+                target[0][action] = reward + Q_future * self.gamma
             # targets.append(target[0])
             targets.append(target)
-            # self.model.fit(state, target, epochs=1, verbose=0)
+            # self.loss_history.append(self.model.fit(state, target, verbose=0, workers=200, use_multiprocessing=True).history['loss'][0])
         # targets = np.delete(targets, 0, axis=0)
-        states = np.array(states)
-        targets = np.array(targets)
-        self.loss_history.append(self.model.fit(states, targets, verbose=0).history['loss'][0])
+        # states = np.array(states)
+        states = np.array([i[0] for i in states])
+        targets = np.array([i[0] for i in targets])
+        self.loss_history.append(self.model.fit(states, targets,verbose=0).history['loss'][0])
 
         # self.fit_count += 1
         # if self.fit_count % 500 == 0 and self.fit_count > 0:
@@ -127,13 +126,14 @@ class DQN:
         self.target_model.set_weights(target_weights)
     
     def calc_reward(self, state, next_state):
-        # Not sure if it's objval we want. Should double-check
-        if next_state['objval'] < state['objval']:
-            return 100
-        if next_state['objval'] > state['objval']:
-            return 0
-        else: 
-            return 1
+        T = 1 / np.exp(next_state[0][0])
+        b = min(1,np.exp((state[0][1] - next_state[0][1])/1 / np.exp(next_state[0][0])))
+
+        if next_state[0][1] < state[0][1]:
+            return 100*b
+        else:
+            return T*b
+
 
     def save_model(self, fn):
         self.model.save(fn)
@@ -160,17 +160,21 @@ class BranchCB(CPX_CB.BranchCallback):
 
         obj    = self.get_objective_coefficients()
         feas   = self.get_feasibilities()
+        depth = self.get_current_node_depth()
 
         node_id = self.get_node_ID() # node id of the current node
         last_node_data = self.get_node_data()
         incumbentval = self.get_incumbent_objective_value() # value of the incumbent solution
         cutoff = self.get_cutoff() # cutoff value
-        
+        gap = (objval - incumbentval) / incumbentval
+        # relative gap
         state = {'best_objval':   best_objval, # best objective function value, i.e. the best known dual bound
                  'objval':        objval,  # function value at the current node
                  'incumbentval':  incumbentval, # value of the incumbent/current solution - i.e. the best known primal bound
                  'cutoff':        cutoff, # cutoff value, i.e. the best known primal bound + 1
                  'gap':           (objval - incumbentval) / incumbentval}
+
+        state = np.array([[depth, gap]])
         action = dqn.get_action(state)
 
         node_data = {'node_id': self.get_node_ID(), 'state': state, 'action': action}
@@ -231,9 +235,9 @@ class BranchCB(CPX_CB.BranchCallback):
             self.reward_history.append(last_reward)
 
             # Debugging
-            info = (last_state, last_action, last_reward, state['objval'], False)
-            print(info)
-            print(f"Reward: {last_reward}")
+            # info = (last_state, last_action, last_reward, state[0], False)
+            # print(info)
+            # print(f"Reward: {last_reward}")
             # pdb.set_trace()
 
             dqn.remember(last_state, last_action, last_reward, state, False)
@@ -307,12 +311,19 @@ def init_cplex_model():
     return cplex, branch_callback
 
 if __name__ == "__main__":
-    episodes = 1
+    episodes = 10
     
     dqn = DQN()
-
+    action_history = []
+    reward_history = []
     for episode in range(episodes):
         cplex, branch_callback = init_cplex_model()
         cplex.solve()
-        plotter.plot_action_history(branch_callback.action_history, BRANCHING_TYPES)
-        plotter.plot_reward_history(branch_callback.reward_history)
+        action_history = np.append(action_history, branch_callback.action_history)
+        reward_history = np.append(reward_history, branch_callback.reward_history)
+        plotter.plot_action_history(action_history, BRANCHING_TYPES)
+        plotter.plot_reward_history(reward_history)
+
+    plotter.plot_action_history(action_history, BRANCHING_TYPES)
+    plotter.plot_reward_history(reward_history)
+    print('Done')
