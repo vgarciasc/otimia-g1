@@ -1,6 +1,6 @@
 import numpy as np
 import pdb
-
+import os 
 def get_mkp_instance(id):
     if id == 0:
         # Instance no. 0
@@ -34,19 +34,14 @@ def get_mkp_instance(id):
     N = len(w)
     return v, w, C, K, N
 
-def get_bkp_instances():
-    files = [
-        "n_1200_c_10000000000_g_6_f_0.2_eps_0.1_s_200.txt",
-        "n_800_c_100000000_g_6_f_0.1_eps_0.1_s_300.txt",
-        "n_400_c_1000000_g_2_f_0.2_eps_0_s_200.txt",
-    ]
-    return files
+def get_bkp_filenames_hard():
+    return os.listdir('files\instances_01_KP_HARD')
 
-def get_bkp_instance(id):
-    files = get_bkp_instances()
-    return read_instance_from_file("files/" + files[id])
+def get_bkp_instance_hard(id=0):
+    files = get_bkp_filenames_hard()
+    return read_instance_from_file_hard("files/instances_01_KP_HARD/" + files[id])
 
-def read_instance_from_file(filepath):
+def read_instance_from_file_hard(filepath):
     with open(filepath) as f:
         parsed = [[int(a) for a in k.strip().split(" ")] for k in f.readlines()]
         N = parsed[0][0]
@@ -55,5 +50,23 @@ def read_instance_from_file(filepath):
         ids, v, w = zip(*parsed[1:-1])
         return v, w, C, N
 
+def get_bkp_filenames(subfolder):
+    return os.listdir('files/instances_01_KP/'+os.listdir('files/instances_01_KP')[subfolder])
+
+
+def read_instance_from_file(filepath):
+    with open(filepath) as f:
+        parsed = [[int(a) for a in k.strip().split(" ")] for k in f.readlines()]
+        C = parsed[0][1]
+        v, w = zip(*parsed[1:-2])
+        N = len(w) # N = parsed[0][0]
+        return v, w, C, N
+
+def get_bkp_instance(id=0, folder=0):
+    files = get_bkp_filenames(folder)
+    return read_instance_from_file("files/instances_01_KP/" + os.listdir('files/instances_01_KP')[folder] +"/"+ files[id])
+
+
 if __name__ == "__main__":
-    get_bkp_instance(0)
+
+    get_bkp_instance(2)

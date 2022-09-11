@@ -241,9 +241,10 @@ def init_cplex_model(instance_num, verbose=False):
     model.set_objective("max", obj_fn)
 
     # Transforming DOCPLEX.MP.MODEL into a CPX.CPLEX object
-    filename = "data/problem.lp"
+    filename = "problem.lp"
     model.dump_as_lp(filename)
     cplex = CPX.Cplex(filename)
+    os.remove(filename)
 
     # Displays node information every X nodes
     cplex.parameters.mip.interval.set(1)
@@ -287,7 +288,7 @@ if __name__ == "__main__":
     episodes = args['episodes']
 
     if args['training_scheme'] == TRAIN_ON_EVERY:
-        instances_to_train = [i for i, _ in enumerate(instance_db.get_bkp_instances())]
+        instances_to_train = [i for i, _ in enumerate(instance_db.get_bkp_filenames_hard())]
     elif args['training_scheme'] == TRAIN_ON_SINGLE:
         instances_to_train = [args['single_instance']]
         
