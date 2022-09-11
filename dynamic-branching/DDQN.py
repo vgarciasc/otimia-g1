@@ -29,7 +29,7 @@ BRANCHING_TYPES = ["Most Infeasible", "Random", "Strong", "Pseudo-cost", "Least 
 class DQN:
     def __init__(self, memory_size=5*10**5, batch_size=32, gamma=0.99,
         exploration_max=1.0, exploration_min=0.1, exploration_decay=0.9999,
-        learning_rate=0.001, tau=0.125):
+        learning_rate=0.001, tau=0.125, n_actions=4):
         
         self.memory = deque(maxlen=memory_size)
         self.batch_size = batch_size
@@ -40,7 +40,7 @@ class DQN:
         self.learning_rate = learning_rate
         self.tau = tau
 
-        self.action_space = Discrete(len(BRANCHING_TYPES))
+        self.action_space = Discrete(n_actions)
         self.observation_space = Box(low=np.array([0,0]), high=np.array([2*10**4,1]), dtype=np.float64)
 
         self.model = self.create_model()

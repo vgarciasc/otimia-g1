@@ -1,4 +1,7 @@
-def get_instance(id):
+import numpy as np
+import pdb
+
+def get_mkp_instance(id):
     if id == 0:
         # Instance no. 0
         w = [4, 2, 5, 4, 5, 1, 3, 5]
@@ -30,3 +33,26 @@ def get_instance(id):
     
     N = len(w)
     return v, w, C, K, N
+
+def get_bkp_instances():
+    files = [
+        "n_1200_c_10000000000_g_6_f_0.2_eps_0.1_s_200.txt",
+        "n_800_c_100000000_g_6_f_0.1_eps_0.1_s_300.txt"
+    ]
+    return files
+
+def get_bkp_instance(id):
+    files = get_bkp_instances()
+    return read_instance_from_file("files/" + files[id])
+
+def read_instance_from_file(filepath):
+    with open(filepath) as f:
+        parsed = [[int(a) for a in k.strip().split(" ")] for k in f.readlines()]
+        N = parsed[0][0]
+        C = parsed[-1][0]
+        ids, v, w = zip(*parsed[1:-1])
+        
+        return v, w, C, N
+
+if __name__ == "__main__":
+    get_bkp_instance(0)

@@ -7,11 +7,17 @@ import cplex as CPX
 import cplex.callbacks as CPX_CB
 from docplex.mp.model import Model
 
+import traceback
+import argparse
 
-from DDQN import DQN, BRANCHING_TYPES
+from DDQN import DQN
 import instance_db
 import utils
 import plotter
+
+BRANCHING_TYPES = ["Most Infeasible", "Random", "Strong", "Pseudo-cost"]
+TRAIN_ON_EVERY = 0
+TRAIN_ON_SINGLE = 1
 
 class BranchCB(CPX_CB.BranchCallback):
     def init(self, _lista):
@@ -129,21 +135,6 @@ class BranchCB(CPX_CB.BranchCallback):
 
             self.make_branch(objval, variables=[branch], constraints=[], node_data=node_data_clone)
         return
-
-        candidate_idxs = utils.get_candidates(self)
-        branching_var_idx = candidate_idxs[0]
-        
-        branching_val = self.get_values(branching_var_idx)
-
-        branches = [(branching_var_idx, 'L', np.floor(branching_val) + 1),
-                    (branching_var_idx, 'U', np.floor(branching_val))]
-
-        for branch in branches:
-            node_data_clone = node_data.copy()
-            node_data_clone['branch_history'] = node_data['branch_history'][:]
-            node_data_clone['branch_history'].append(branch)
-
-            self.make_branch(objval, variables=[branch], constraints=[], node_data=node_data_clone)
         
     def __call__(self):
         # Counter of how many times the callback was called
@@ -167,7 +158,10 @@ class BranchCB(CPX_CB.BranchCallback):
                  'gap':           (objval - incumbentval) / incumbentval}
 
         state = np.array([[depth, gap]])
-        action = dqn.get_action(state)
+        if self.branching_strategy == -1:
+            action = dqn.get_action(state)
+        else:
+            action = self.branching_strategy
 
         node_data = {'branch_history': [],'node_id': self.get_node_ID(), 'state': state, 'action': action}
         if last_node_data != None:
@@ -178,60 +172,66 @@ class BranchCB(CPX_CB.BranchCallback):
         # Debugging
         # print(f"Node_id: {node_id}, state: {state}")
         # print(f'Branching type {BRANCHING_TYPES[action]}, -- Times called: ', self.times_called)
-
         
         if self.get_num_branches() == 0:
-          return
+            return
         else:
-          if action == 0:
-              self.branch_most_infeasible(node_data)
-          elif action == 1:
-              self.branch_random(node_data)
-          elif action == 2:
-              self.branch_strong(node_data)
-          elif action == 3:
-              self.branch_pseudocost(node_data)
-          elif action == 4:
-              self.branch_least_infeasible(node_data)
+            if action == 0:
+                self.branch_most_infeasible(node_data)
+            elif action == 1:
+                self.branch_random(node_data)
+            elif action == 2:
+                self.branch_strong(node_data)
+            elif action == 3:
+                self.branch_pseudocost(node_data)
+            elif action == 4:
+                self.branch_least_infeasible(node_data)
 
-          if last_node_data is not None:
-              last_state = last_node_data['state']
-              last_action = last_node_data['action']
-              last_reward = dqn.calc_reward(last_state, state)
-              self.get_MIP_relative_gap()
-              self.action_history.append(last_action)
-              self.reward_history.append(last_reward)
-              self.optgap_history.append(gap)
+        if self.branching_strategy == -1 and last_node_data is not None:
+            last_state = last_node_data['state']
+            last_action = last_node_data['action']
+            last_reward = dqn.calc_reward(last_state, state)
+            self.get_MIP_relative_gap()
+            self.action_history.append(last_action)
+            self.reward_history.append(last_reward)
+            self.optgap_history.append(gap)
 
-              # Debugging
-              #info = (last_state, last_action, last_reward, state[0], False)
-              #print(info)
-              #print(f"Reward: {last_reward}")
-              # pdb.set_trace()
+            dqn.remember(last_state, last_action, last_reward, state, False)
+            dqn.replay()
+            dqn.target_train()
 
-              dqn.remember(last_state, last_action, last_reward, state, False)
-              dqn.replay()
-              dqn.target_train()
+            # Debugging
+            #info = (last_state, last_action, last_reward, state[0], False)
+            #print(info)
+            #print(f"Reward: {last_reward}")
+            # pdb.set_trace()
 
         # self.report_count += 1
         # if self.report_count % 500 == 0 and self.report_count > 0:
         #     pd.DataFrame(self.states_to_process).to_csv('saved/states_to_process.csv')  
 
 def init_cplex_model(instance_num, verbose=False):
-    # Loading instance
-    v, w, C, K, N = instance_db.get_instance(instance_num)
-
-    model = Model('multiple knapsack', log_output=verbose)
-    x = model.integer_var_matrix(N, K, name="x")
-    for j in range(K):
-        model.add_constraint(sum(w[i]*x[i, j] for i in range(N)) <= C[j])
-    for i in range(N):
-        model.add_constraint(sum(x[i, j] for j in range(K)) <= 10)
-    obj_fn = sum(v[i]*x[i,j] for i in range(N) for j in range(K))
+    # MULTIPLE KNAPSACK
+    # v, w, C, K, N = instance_db.get_mkp_instance(instance_num)
+    # model = Model('multiple knapsack', log_output=verbose)
+    # x = model.integer_var_matrix(N, K, name="x")
+    # for j in range(K):
+    #     model.add_constraint(sum(w[i]*x[i, j] for i in range(N)) <= C[j])
+    # for i in range(N):
+    #     model.add_constraint(sum(x[i, j] for j in range(K)) <= 10)
+    # obj_fn = sum(v[i]*x[i,j] for i in range(N) for j in range(K))
+    # model.set_objective("max", obj_fn)
+    
+    # BINARY KNAPSACK
+    v, w, C, N = instance_db.get_bkp_instance(instance_num)
+    model = Model('binary knapsack', log_output=verbose)
+    x = model.binary_var_list(N, name="x")
+    model.add_constraint(sum(w[i]*x[i] for i in range(N)) <= C)
+    obj_fn = sum(v[i]*x[i] for i in range(N))
     model.set_objective("max", obj_fn)
 
     # Transforming DOCPLEX.MP.MODEL into a CPX.CPLEX object
-    filename = "data\problem.lp"
+    filename = "data/problem.lp"
     model.dump_as_lp(filename)
     cplex = CPX.Cplex(filename)
 
@@ -264,25 +264,40 @@ def init_cplex_model(instance_num, verbose=False):
     return cplex, branch_callback
 
 if __name__ == "__main__":
-    episodes = 10
-    
-    dqn = DQN()
+    parser = argparse.ArgumentParser(description='Dynamic Branching')
+    parser.add_argument('--episodes', help="How many episodes run?", required=True, type=int)
+    parser.add_argument('--branching_strategy', help="Which branching strategy to use?", required=True, type=int)
+    parser.add_argument('--training_scheme', help='Which training scheme to use? 0 is train on every instance, 1 is train on single instance', required=False, default=-1, type=int)
+    parser.add_argument('--single_instance', help='Which single instance to run?', required=False, default=-1, type=int)
+    parser.add_argument('--verbose', help='Is verbose?', required=False, default=False, type=lambda x: (str(x).lower() == 'true'))
+    args = vars(parser.parse_args())
+
+    episodes = args['episodes']
+
+    if args['training_scheme'] == TRAIN_ON_EVERY:
+        instances_to_train = [i for i, _ in enumerate(instance_db.get_bkp_instances())]
+    elif args['training_scheme'] == TRAIN_ON_SINGLE:
+        instances_to_train = [args['single_instance']]
+        
+    dqn = DQN(n_actions=len(BRANCHING_TYPES))
     action_history = []
     reward_history = []
     optgap_history = []
 
     for episode in range(episodes):
-        cplex, branch_callback = init_cplex_model(instance_num=1, verbose=False)
+        for instance_num in instances_to_train:
+            cplex, branch_callback = init_cplex_model(instance_num=instance_num, verbose=args['verbose'])
+            branch_callback.branching_strategy = args['branching_strategy']
 
-        cplex.solve()
-        
-        action_history = np.append(action_history, branch_callback.action_history)
-        reward_history = np.append(reward_history, branch_callback.reward_history)
-        optgap_history = np.append(optgap_history, branch_callback.optgap_history)
+            cplex.solve()
+            
+            action_history = np.append(action_history, branch_callback.action_history)
+            reward_history = np.append(reward_history, branch_callback.reward_history)
+            optgap_history = np.append(optgap_history, branch_callback.optgap_history)
 
-        plotter.plot_action_history(action_history, BRANCHING_TYPES, episode)
-        plotter.plot_reward_history(reward_history, episode)
-        plotter.plot_generic(dqn.loss_history, "DQN Loss", episode)
-        plotter.plot_generic(optgap_history, "Optimality Gap", episode)
+            plotter.plot_action_history(action_history, BRANCHING_TYPES, episode)
+            plotter.plot_reward_history(reward_history, episode)
+            plotter.plot_generic(dqn.loss_history, "DQN Loss", episode)
+            plotter.plot_generic(optgap_history, "Optimality Gap", episode)
         
     print('Done')

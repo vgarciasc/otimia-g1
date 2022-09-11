@@ -21,7 +21,7 @@ def plot_action_history(action_history, branching_types, episode):
     plt.xlabel("Iteration")
     plt.legend()
     #plt.savefig("actions"+str(episode)+".png")
-    plt.savefig(f"actions_{episode}.png")
+    plt.savefig(f"data/actions_{episode}.png")
     # plt.show()
     plt.close('all')
 
@@ -38,7 +38,7 @@ def plot_reward_history(reward_history, episode):
     # plt.plot(reward_history, color='cyan', linestyle='dashed', label='Absolute reward')
     plt.xlabel("Iteration")
     plt.legend()
-    plt.savefig(f"rewards_{episode}")
+    plt.savefig(f"data/rewards_{episode}")
     # plt.show()
     plt.close('all')
 
@@ -47,6 +47,6 @@ def plot_generic(array, s, episode):
   plt.plot(array)
   plt.xlabel("Iteration")
   plt.legend()
-  plt.savefig(f"{s}_{episode}")
+  plt.savefig(f"data/{s}_{episode}")
   plt.close('all')
     
