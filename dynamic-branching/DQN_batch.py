@@ -115,6 +115,23 @@ class DQN:
             return 100*b
         else:
             return T*b
-
+            
     def save_model(self, fn):
         self.model.save(fn)
+        
+if __name__ == "__main__":
+    total_iterations = 0
+    max_episodes = 1
+    dqn = DQN()
+
+    for episode in range(max_episodes):
+        instance_num = 1 #should select different instances across time
+        cplex, branch_callback = init_cplex_model(instance_num)
+        
+        cplex.solve()
+
+        total_iterations += branch_callback.times_called
+        print(f"Nodes opened: {branch_callback.times_called}")
+
+        plotter.plot_action_history(branch_callback.action_history, BRANCHING_TYPES)
+        plotter.plot_reward_history(branch_callback.reward_history)
