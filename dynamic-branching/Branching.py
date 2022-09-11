@@ -8,7 +8,7 @@ import cplex.callbacks as CPX_CB
 from docplex.mp.model import Model
 
 
-from DQN_batch import DQN, BRANCHING_TYPES
+from DDQN import DQN, BRANCHING_TYPES
 import instance_db
 import utils
 import plotter
@@ -231,7 +231,7 @@ def init_cplex_model(instance_num, verbose=False):
     model.set_objective("max", obj_fn)
 
     # Transforming DOCPLEX.MP.MODEL into a CPX.CPLEX object
-    filename = "problem.lp"
+    filename = "data\problem.lp"
     model.dump_as_lp(filename)
     cplex = CPX.Cplex(filename)
 
