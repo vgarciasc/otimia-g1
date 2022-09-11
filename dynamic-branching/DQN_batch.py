@@ -24,11 +24,11 @@ EPSILON = 1e-6
 OPTIMAL = 1
 INFEASIBILITY = 1e6
 
-BRANCHING_TYPES = ["Most Fractional", "Random", "Strong", "Minimum Infeasibility", "Maximum Infeasibility", "Pseudo-cost", "Pseudo-reduced-cost"]
+BRANCHING_TYPES = ["Most Infeasible", "Random", "Strong", "Pseudo-cost", "Least Infeasible"]
 
 class DQN:
     def __init__(self, memory_size=5*10**5, batch_size=32, gamma=0.99,
-        exploration_max=1.0, exploration_min=0.1, exploration_decay=0.999,
+        exploration_max=1.0, exploration_min=0.1, exploration_decay=0.9999,
         learning_rate=0.001, tau=0.125):
         
         self.memory = deque(maxlen=memory_size)

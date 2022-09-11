@@ -7,7 +7,8 @@ import cplex as CPX
 import cplex.callbacks as CPX_CB
 from docplex.mp.model import Model
 
-from DQN_batch import DQN
+
+from DQN_batch import DQN, BRANCHING_TYPES
 import instance_db
 import utils
 import plotter
@@ -23,7 +24,7 @@ class BranchCB(CPX_CB.BranchCallback):
         self.reward_history = []
         self.optgap_history = []
     
-    def branch_most_fractional(self, node_data):
+    def branch_most_infeasible(self, node_data):
         x = self.get_values()
         feas = self.get_feasibilities()
         obj = self.get_objective_coefficients()
@@ -42,6 +43,31 @@ class BranchCB(CPX_CB.BranchCallback):
                 if (xj_inf >= maxinf and (xj_inf > maxinf or fabs(obj[j]) >= maxobj)):
                     selected_var = j
                     maxinf = xj_inf
+                    maxobj = fabs(obj[j])
+        
+        xj_lo = floor(x[selected_var])
+        self.make_branch(objval, variables = [(selected_var, "L", xj_lo + 1)], node_data = node_data)
+        self.make_branch(objval, variables = [(selected_var, "U", xj_lo    )], node_data = node_data)
+
+    def branch_least_infeasible(self, node_data):
+        x = self.get_values()
+        feas = self.get_feasibilities()
+        obj = self.get_objective_coefficients()
+        objval = self.get_objective_value()
+
+        maxobj = -CPX.infinity
+        mininf = -CPX.infinity
+
+        selected_var = 0
+        for j in range(len(x)):
+            if feas[j] == self.feasibility_status.infeasible:
+                xj_inf = x[j] - floor(x[j])
+                if xj_inf > 0.5:
+                    xj_inf = 1.0 - xj_inf
+                    
+                if (xj_inf <= mininf and (xj_inf < mininf or fabs(obj[j]) >= maxobj)):
+                    selected_var = j
+                    mininf = xj_inf
                     maxobj = fabs(obj[j])
         
         xj_lo = floor(x[selected_var])
@@ -158,13 +184,15 @@ class BranchCB(CPX_CB.BranchCallback):
           return
         else:
           if action == 0:
-              self.branch_most_fractional(node_data)
+              self.branch_most_infeasible(node_data)
           elif action == 1:
               self.branch_random(node_data)
           elif action == 2:
               self.branch_strong(node_data)
           elif action == 3:
               self.branch_pseudocost(node_data)
+          elif action == 4:
+              self.branch_least_infeasible(node_data)
 
           if last_node_data is not None:
               last_state = last_node_data['state']
@@ -173,6 +201,7 @@ class BranchCB(CPX_CB.BranchCallback):
               self.get_MIP_relative_gap()
               self.action_history.append(last_action)
               self.reward_history.append(last_reward)
+              self.optgap_history.append(gap)
 
               # Debugging
               #info = (last_state, last_action, last_reward, state[0], False)
@@ -207,7 +236,7 @@ def init_cplex_model(instance_num, verbose=False):
     cplex = CPX.Cplex(filename)
 
     # Displays node information every X nodes
-    # cplex.parameters.mip.interval.set(1)
+    cplex.parameters.mip.interval.set(1)
 
     # Turning off presolving callbacks
     cplex.parameters.preprocessing.presolve.set(0) # Decides whether CPLEX applies presolve during preprocessing to simplify and reduce problems
@@ -225,7 +254,6 @@ def init_cplex_model(instance_num, verbose=False):
     branch_callback.init(states_to_process)
     branch_callback.ordered_var_idx_lst = list(range(num_vars))
     branch_callback.c = cplex
-    branch_callback.cplex = cplex
     branch_callback.num_infeasible_left = np.zeros(num_vars)
     branch_callback.num_infeasible_right = np.zeros(num_vars)
     branch_callback.times_called = 0
@@ -236,22 +264,25 @@ def init_cplex_model(instance_num, verbose=False):
     return cplex, branch_callback
 
 if __name__ == "__main__":
-    episodes = 100
+    episodes = 10
     
     dqn = DQN()
     action_history = []
     reward_history = []
+    optgap_history = []
 
     for episode in range(episodes):
-        cplex, branch_callback = init_cplex_model(instance_num=2, verbose=False)
+        cplex, branch_callback = init_cplex_model(instance_num=1, verbose=False)
 
         cplex.solve()
         
         action_history = np.append(action_history, branch_callback.action_history)
         reward_history = np.append(reward_history, branch_callback.reward_history)
-        print(f'Mean reward at episode {episode}: ', np.mean(reward_history))
-        print(f'Mean DQN Loss at episode {episode}: ',np.mean(dqn.loss_history))
-        #plotter.plot_action_history(action_history, BRANCHING_TYPES)
-        #plotter.plot_reward_history(reward_history)
-    
+        optgap_history = np.append(optgap_history, branch_callback.optgap_history)
+
+        plotter.plot_action_history(action_history, BRANCHING_TYPES, episode)
+        plotter.plot_reward_history(reward_history, episode)
+        plotter.plot_generic(dqn.loss_history, "DQN Loss", episode)
+        plotter.plot_generic(optgap_history, "Optimality Gap", episode)
+        
     print('Done')
