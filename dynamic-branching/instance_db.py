@@ -51,22 +51,27 @@ def read_instance_from_file_hard(filepath):
         return v, w, C, N
 
 def get_bkp_filenames(subfolder):
-    return os.listdir('files/instances_01_KP/'+os.listdir('files\instances_01_KP')[subfolder])
+    return os.listdir('files/instances_01_KP/'+os.listdir('files/instances_01_KP')[subfolder])
 
-def get_bkp_instance(id=0, folder=0):
-    files = get_bkp_filenames(folder)
-    return read_instance_from_file("files/instances_01_KP/" + files[id])
 
 def read_instance_from_file(filepath):
     with open(filepath) as f:
         parsed = [[int(a) for a in k.strip().split(" ")] for k in f.readlines()]
-        N = parsed[0][0]
         C = parsed[0][1]
-
         v, w = zip(*parsed[1:-2])
-        print(v, w, C, N)
+        N = len(w) # N = parsed[0][0]
+        print( "v: ", v, len(v))
+        print( "w: ", w, len(w))
+        print( "C: ", C)
+        print( "N: ", N)
         return v, w, C, N
+
+
+def get_bkp_instance(id=0, folder=0):
+    files = get_bkp_filenames(folder)
+    return read_instance_from_file("files/instances_01_KP/" + os.listdir('files/instances_01_KP')[folder] +"/"+ files[id])
+
 
 if __name__ == "__main__":
 
-    get_bkp_instance(2, 0)
+    get_bkp_instance(2)

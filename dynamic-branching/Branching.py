@@ -228,7 +228,7 @@ def init_cplex_model(instance_num, verbose=False):
     # model.set_objective("max", obj_fn)
     
     # BINARY KNAPSACK
-    v, w, C, N = instance_db.get_bkp_instance_hard(instance_num)
+    v, w, C, N = instance_db.get_bkp_instance(2)
     K = 1
     C = [C]
     model = Model('binary knapsack', log_output=verbose)
