@@ -51,44 +51,9 @@ def read_instance_from_file_hard(filepath):
         ids, v, w = zip(*parsed[1:-1])
         return v, w, C, N
 
-def get_bkp_filenames():
-    # This way the ID of each instance is fixed and does not depend on which files
-    # are included in each folder. Also the ID depends only on a single number
-    # and not on two (file_id + folder_id)  
-    files = [
-        "large_scale/knapPI_1_100_1000_1",
-        "large_scale/knapPI_1_200_1000_1",
-        "large_scale/knapPI_1_5000_1000_1",
-        "large_scale/knapPI_2_10000_1000_1",
-        "large_scale/knapPI_2_500_1000_1",
-        "large_scale/knapPI_3_1000_1000_1",
-        "large_scale/knapPI_3_2000_1000_1",
-        "large_scale/knapPI_1_1000_1000_1",
-        "large_scale/knapPI_1_2000_1000_1",
-        "large_scale/knapPI_2_100_1000_1",
-        "large_scale/knapPI_2_200_1000_1",
-        "large_scale/knapPI_2_5000_1000_1",
-        "large_scale/knapPI_3_10000_1000_1",
-        "large_scale/knapPI_3_500_1000_1",
-        "large_scale/knapPI_1_10000_1000_1",
-        "large_scale/knapPI_1_500_1000_1",
-        "large_scale/knapPI_2_1000_1000_1",
-        "large_scale/knapPI_2_2000_1000_1",
-        "large_scale/knapPI_3_100_1000_1",
-        "large_scale/knapPI_3_200_1000_1",
-        "large_scale/knapPI_3_5000_1000_1",
-        "low-dimensional/f1_l-d_kp_10_269",
-        "low-dimensional/f2_l-d_kp_20_878",
-        "low-dimensional/f4_l-d_kp_4_11",
-        "low-dimensional/f6_l-d_kp_10_60",
-        "low-dimensional/f8_l-d_kp_23_10000",
-        "low-dimensional/f10_l-d_kp_20_879",
-        "low-dimensional/f3_l-d_kp_4_20",
-        "low-dimensional/f5_l-d_kp_15_375",
-        "low-dimensional/f7_l-d_kp_7_50",
-        "low-dimensional/f9_l-d_kp_5_80"
-    ]
-    return files
+def get_bkp_filenames(subfolder):
+    return os.listdir('files/instances_01_KP/'+os.listdir('files/instances_01_KP')[subfolder])
+
 
 def read_instance_from_file(filepath):
     with open(filepath) as f:
@@ -98,8 +63,27 @@ def read_instance_from_file(filepath):
         N = len(w) # N = parsed[0][0]
         return v, w, C, N
 
-def get_bkp_instance(id=0):    
-    return read_instance_from_file("files/instances_01_KP/" + get_bkp_filenames()[id])
+def get_bkp_instance(id=0, folder=0):
+    files = get_bkp_filenames(folder)
+    return read_instance_from_file("files/instances_01_KP/" + os.listdir('files/instances_01_KP')[folder] +"/"+ files[id])
+
+def get_mkp_filenames(subfolder=0):
+    return os.listdir('files/instances_01_MKP/'+os.listdir('files/instances_01_MKP')[subfolder])
+
+def read_instance_from_file_mkp(filepath):
+    with open(filepath) as f:
+        parsed = [[int(a) for a in k.strip().split()] for k in f.readlines()]
+        K = parsed[0][0]
+        N = parsed[1][0]
+        C = parsed[2:K+2]
+        C = np.transpose(parsed[2:K+2])[0]
+        v, w = zip(*parsed[K+2:])
+        N = len(w)
+        return v, w, K, C, N
+
+def get_mkp_instance(id=0, folder=0):
+    files = get_mkp_filenames(folder)
+    return read_instance_from_file_mkp("files/instances_01_MKP/" + os.listdir('files/instances_01_MKP')[folder] +"/"+ files[id])
 
 def get_bkp_instance_as_mkp(instance_num):
     v, w, C, N = get_bkp_instance(instance_num)
@@ -108,4 +92,5 @@ def get_bkp_instance_as_mkp(instance_num):
     return v, w, C, K, N
 
 if __name__ == "__main__":
-    get_bkp_instance(2)
+
+    get_mkp_instance(0)
