@@ -37,7 +37,8 @@ def get_mkp_instance(id):
 def get_bkp_instances():
     files = [
         "n_1200_c_10000000000_g_6_f_0.2_eps_0.1_s_200.txt",
-        "n_800_c_100000000_g_6_f_0.1_eps_0.1_s_300.txt"
+        "n_800_c_100000000_g_6_f_0.1_eps_0.1_s_300.txt",
+        "n_400_c_1000000_g_2_f_0.2_eps_0_s_200.txt",
     ]
     return files
 
@@ -50,8 +51,8 @@ def read_instance_from_file(filepath):
         parsed = [[int(a) for a in k.strip().split(" ")] for k in f.readlines()]
         N = parsed[0][0]
         C = parsed[-1][0]
-        ids, v, w = zip(*parsed[1:-1])
         
+        ids, v, w = zip(*parsed[1:-1])
         return v, w, C, N
 
 if __name__ == "__main__":

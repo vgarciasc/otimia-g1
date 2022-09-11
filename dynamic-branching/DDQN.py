@@ -25,6 +25,8 @@ OPTIMAL = 1
 INFEASIBILITY = 1e6
 
 BRANCHING_TYPES = ["Most Infeasible", "Random", "Strong", "Pseudo-cost", "Least Infeasible"]
+S_DEPTH = 0
+S_GAP = 1
 
 class DQN:
     def __init__(self, memory_size=5*10**5, batch_size=32, gamma=0.99,
@@ -62,11 +64,13 @@ class DQN:
 
         return _model
 
-    def get_action(self, state):
-        self.exploration_max *= self.exploration_decay
-        self.exploration_max = max(self.exploration_min, self.exploration_max)
-        if np.random.random() < self.exploration_max:
-            return self.action_space.sample()
+    def get_action(self, state, should_explore=True):
+        if should_explore:
+            self.exploration_max *= self.exploration_decay
+            self.exploration_max = max(self.exploration_min, self.exploration_max)
+            if np.random.random() < self.exploration_max:
+                return self.action_space.sample()
+        
         # q_values = self.model.predict(state, verbose=0)
         q_values = self.model(state).numpy()
         best_action = np.argmax(q_values[0])
@@ -108,10 +112,12 @@ class DQN:
         self.target_model.set_weights(target_weights)
     
     def calc_reward(self, state, next_state):
-        T = 1 / np.exp(next_state[0][0])
-        b = min(1,np.exp((state[0][1] - next_state[0][1])/1 / np.exp(next_state[0][0])))
+        state, next_state = state[0], next_state[0]
 
-        if next_state[0][1] < state[0][1]:
+        T = 1 / np.exp(next_state[S_DEPTH])
+        b = min(1, np.exp((state[S_GAP] - next_state[S_GAP]) / T))
+
+        if next_state[S_GAP] < state[S_GAP]:
             return 100*b
         else:
             return T*b

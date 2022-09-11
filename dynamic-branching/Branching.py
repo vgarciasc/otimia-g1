@@ -18,6 +18,7 @@ import plotter
 BRANCHING_TYPES = ["Most Infeasible", "Random", "Strong", "Pseudo-cost"]
 TRAIN_ON_EVERY = 0
 TRAIN_ON_SINGLE = 1
+BRANCHING_RL = -1
 
 class BranchCB(CPX_CB.BranchCallback):
     def init(self, _lista):
@@ -157,13 +158,14 @@ class BranchCB(CPX_CB.BranchCallback):
                  'cutoff':        cutoff, # cutoff value, i.e. the best known primal bound + 1
                  'gap':           (objval - incumbentval) / incumbentval}
 
+        # TODO: Add more information to input
         state = np.array([[depth, gap]])
-        if self.branching_strategy == -1:
+        if self.branching_strategy == BRANCHING_RL:
             action = dqn.get_action(state)
         else:
             action = self.branching_strategy
 
-        node_data = {'branch_history': [],'node_id': self.get_node_ID(), 'state': state, 'action': action}
+        node_data = {'branch_history': [], 'node_id': self.get_node_ID(), 'state': state, 'action': action}
         if last_node_data != None:
           node_data['branch_history'] = last_node_data['branch_history'][:]
 
@@ -188,6 +190,9 @@ class BranchCB(CPX_CB.BranchCallback):
                 self.branch_least_infeasible(node_data)
 
         if self.branching_strategy == -1 and last_node_data is not None:
+            # Previous state and action are stored in 'node_data' object
+            # Because we don't know the reward and next_state until the
+            # children nodes are processed
             last_state = last_node_data['state']
             last_action = last_node_data['action']
             last_reward = dqn.calc_reward(last_state, state)
@@ -224,10 +229,15 @@ def init_cplex_model(instance_num, verbose=False):
     
     # BINARY KNAPSACK
     v, w, C, N = instance_db.get_bkp_instance(instance_num)
+    K = 1
+    C = [C]
     model = Model('binary knapsack', log_output=verbose)
-    x = model.binary_var_list(N, name="x")
-    model.add_constraint(sum(w[i]*x[i] for i in range(N)) <= C)
-    obj_fn = sum(v[i]*x[i] for i in range(N))
+    x = model.integer_var_matrix(N, K, name="x")
+    for j in range(K):
+        model.add_constraint(sum(w[i]*x[i, j] for i in range(N)) <= C[j])
+    for i in range(N):
+        model.add_constraint(sum(x[i, j] for j in range(K)) <= 1)
+    obj_fn = sum(v[i]*x[i,j] for i in range(N) for j in range(K))
     model.set_objective("max", obj_fn)
 
     # Transforming DOCPLEX.MP.MODEL into a CPX.CPLEX object
@@ -243,7 +253,8 @@ def init_cplex_model(instance_num, verbose=False):
     cplex.parameters.preprocessing.aggregator.set(0) # Invokes the aggregator to use substitution where possible to reduce the number of rows and columns before the problem is solved. If set to a positive value, the aggregator is applied the specified number of times or until no more reductions are possible.
     cplex.parameters.preprocessing.relax.set(0) # Decides whether LP presolve is applied to the root relaxation in a mixed integer program (MIP). Sometimes additional reductions can be made beyond any MIP presolve reductions that were already done. By default, CPLEX applies presolve to the initial relaxation in order to hasten time to the initial solution.
     cplex.parameters.preprocessing.numpass.set(0) # Limits the number of pre-resolution passes that CPLEX makes during pre-processing. When this parameter is set to a positive value, pre-resolution is applied for the specified number of times or until no further reduction is possible.
-    
+    cplex.parameters.mip.cuts.mircut.set(-1) # Decides whether or not to generate MIR cuts (mixed integer rounding cuts) for the problem.
+
     cplex.parameters.mip.strategy.variableselect.set(3) # Pseudo-cost branching: DO NOT CHANGE!
 
     num_vars = cplex.variables.get_num()
@@ -269,6 +280,7 @@ if __name__ == "__main__":
     parser.add_argument('--branching_strategy', help="Which branching strategy to use?", required=True, type=int)
     parser.add_argument('--training_scheme', help='Which training scheme to use? 0 is train on every instance, 1 is train on single instance', required=False, default=-1, type=int)
     parser.add_argument('--single_instance', help='Which single instance to run?', required=False, default=-1, type=int)
+    parser.add_argument('--execution_name', help='What is the execution name?', required=False, default="", type=str)
     parser.add_argument('--verbose', help='Is verbose?', required=False, default=False, type=lambda x: (str(x).lower() == 'true'))
     args = vars(parser.parse_args())
 
@@ -295,9 +307,9 @@ if __name__ == "__main__":
             reward_history = np.append(reward_history, branch_callback.reward_history)
             optgap_history = np.append(optgap_history, branch_callback.optgap_history)
 
-            plotter.plot_action_history(action_history, BRANCHING_TYPES, episode)
-            plotter.plot_reward_history(reward_history, episode)
-            plotter.plot_generic(dqn.loss_history, "DQN Loss", episode)
-            plotter.plot_generic(optgap_history, "Optimality Gap", episode)
+            plotter.plot_action_history(action_history, BRANCHING_TYPES, episode, args['execution_name'])
+            plotter.plot_reward_history(reward_history, episode, args['execution_name'])
+            plotter.plot_generic(dqn.loss_history, "DQN Loss", episode, args['execution_name'])
+            plotter.plot_generic(optgap_history, "Optimality Gap", episode, args['execution_name'])
         
     print('Done')
