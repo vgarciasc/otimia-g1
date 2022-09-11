@@ -51,7 +51,7 @@ def read_instance_from_file_hard(filepath):
         return v, w, C, N
 
 def get_bkp_filenames(subfolder):
-    return os.listdir('files/instances_01_KP/'+os.listdir('files/instances_01_KP')[subfolder])
+    return os.listdir('C:/Users/vitor/Documents/OTIMIA/trabalho/otimia-g1/dynamic-branching/files/instances_01_KP/'+os.listdir('C:/Users/vitor/Documents/OTIMIA/trabalho/otimia-g1/dynamic-branching/files/instances_01_KP')[subfolder])
 
 
 def read_instance_from_file(filepath):
@@ -64,7 +64,7 @@ def read_instance_from_file(filepath):
 
 def get_bkp_instance(id=0, folder=0):
     files = get_bkp_filenames(folder)
-    return read_instance_from_file("files/instances_01_KP/" + os.listdir('files/instances_01_KP')[folder] +"/"+ files[id])
+    return read_instance_from_file("C:/Users/vitor/Documents/OTIMIA/trabalho/otimia-g1/dynamic-branching/files/instances_01_KP/" + os.listdir('C:/Users/vitor/Documents/OTIMIA/trabalho/otimia-g1/dynamic-branching/files/instances_01_KP')[folder] +"/"+ files[id])
 
 
 if __name__ == "__main__":

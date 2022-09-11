@@ -1,1 +1,6 @@
 __pycache__/
+data
+.vscode/launch.json
+.gitignore
+anotacoes.txt
+dynamic-branching/instance_db.py
