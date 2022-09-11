@@ -1,4 +1,4 @@
-from math import fabs, floor
+from math import ceil, fabs, floor
 import pdb
 import sys
 import os
@@ -26,7 +26,7 @@ class BranchCB(CPX_CB.BranchCallback):
 
         self.times_called = 0
         self.report_count = 0
-        self.branches_count = 0
+        self.nodes_count = 0
         self.action_history = []
         self.reward_history = []
         self.optgap_history = []
@@ -55,6 +55,7 @@ class BranchCB(CPX_CB.BranchCallback):
         xj_lo = floor(x[selected_var])
         self.make_branch(objval, variables = [(selected_var, "L", xj_lo + 1)], node_data = node_data)
         self.make_branch(objval, variables = [(selected_var, "U", xj_lo    )], node_data = node_data)
+        self.nodes_count += 2
 
     def branch_least_infeasible(self, node_data):
         x = self.get_values()
@@ -80,6 +81,7 @@ class BranchCB(CPX_CB.BranchCallback):
         xj_lo = floor(x[selected_var])
         self.make_branch(objval, variables = [(selected_var, "L", xj_lo + 1)], node_data = node_data)
         self.make_branch(objval, variables = [(selected_var, "U", xj_lo    )], node_data = node_data)
+        self.nodes_count += 2
     
     def branch_random(self, node_data):
         x = self.get_values()
@@ -102,6 +104,7 @@ class BranchCB(CPX_CB.BranchCallback):
             node_data_clone['branch_history'].append(branch)
 
             self.make_branch(objval, variables=[branch], constraints=[], node_data=node_data_clone)
+            self.nodes_count += 1
 
     def branch_strong(self, node_data):
         candidate_idxs = utils.get_candidates(self)
@@ -125,6 +128,7 @@ class BranchCB(CPX_CB.BranchCallback):
             node_data_clone['branch_history'].append(branch)
 
             self.make_branch(objval, variables=[branch], constraints=[], node_data=node_data_clone)
+            self.nodes_count += 1
 
     def branch_pseudocost(self, node_data):
         objval = self.get_objective_value()
@@ -135,6 +139,7 @@ class BranchCB(CPX_CB.BranchCallback):
             node_data_clone['branch_history'].append(branch)
 
             self.make_branch(objval, variables=[branch], constraints=[], node_data=node_data_clone)
+            self.nodes_count += 1
         return
         
     def __call__(self):
@@ -142,24 +147,26 @@ class BranchCB(CPX_CB.BranchCallback):
         self.times_called += 1
         
         # Getting information about state of node and tree
-        objval = self.get_objective_value()
-        best_objval = self.get_best_objective_value()
-        incumbentval = self.get_incumbent_objective_value() # value of the incumbent solution
-        depth = self.get_current_node_depth()
-        node_id = self.get_node_ID() # node id of the current node
         last_node_data = self.get_node_data()
-        cutoff = self.get_cutoff() # cutoff value
-        gap = (objval - incumbentval) / incumbentval
-
-        # relative gap
-        state = {'best_objval':   best_objval, # best objective function value, i.e. the best known dual bound
-                 'objval':        objval,  # function value at the current node
-                 'incumbentval':  incumbentval, # value of the incumbent/current solution - i.e. the best known primal bound
-                 'cutoff':        cutoff, # cutoff value, i.e. the best known primal bound + 1
-                 'gap':           (objval - incumbentval) / incumbentval}
 
         # TODO: Add more information to input
-        state = np.array([[depth, gap]])
+        objval = self.get_objective_value()
+        incumbentval = self.get_incumbent_objective_value()
+        gap = (objval - incumbentval) / incumbentval
+        num_set_variables = len(utils.get_data(self)['branch_history'])
+        pc_up, pc_down = zip(*self.get_pseudo_costs())
+
+        # NOTE: Every info should be normalized between 0 and 1!
+        state = np.array([[
+            self.get_current_node_depth() / ceil(np.log2(5000)), # current depth normalized by maximum depth
+            gap, # optimal gap
+            np.mean(self.get_feasibilities()), # percentage of feasible variables
+            1 - num_set_variables / len(self.get_values()), # percentage of unset variables (DASH)
+            np.mean(pc_up), # average pseudo-cost for each variable up
+            np.mean(pc_down), # average pseudo-cost for each variable down
+            np.mean(self.get_values()), # average number of items in knapsack
+        ]])
+
         if self.branching_strategy == BRANCHING_RL:
             action = dqn.get_action(state)
         else:
@@ -167,10 +174,8 @@ class BranchCB(CPX_CB.BranchCallback):
 
         node_data = {'branch_history': [], 'node_id': self.get_node_ID(), 'state': state, 'action': action}
         if last_node_data != None:
-          node_data['branch_history'] = last_node_data['branch_history'][:]
+            node_data['branch_history'] = last_node_data['branch_history'][:]
 
-        # node_data = utils.get_data(self)
-        
         # Debugging
         # print(f"Node_id: {node_id}, state: {state}")
         # print(f'Branching type {BRANCHING_TYPES[action]}, -- Times called: ', self.times_called)
@@ -211,34 +216,31 @@ class BranchCB(CPX_CB.BranchCallback):
             #print(f"Reward: {last_reward}")
             # pdb.set_trace()
 
-        # self.report_count += 1
-        # if self.report_count % 500 == 0 and self.report_count > 0:
-        #     pd.DataFrame(self.states_to_process).to_csv('saved/states_to_process.csv')  
-
 def init_cplex_model(instance_num, verbose=False):
     # MULTIPLE KNAPSACK
     # v, w, C, K, N = instance_db.get_mkp_instance(instance_num)
-    # model = Model('multiple knapsack', log_output=verbose)
-    # x = model.integer_var_matrix(N, K, name="x")
-    # for j in range(K):
-    #     model.add_constraint(sum(w[i]*x[i, j] for i in range(N)) <= C[j])
-    # for i in range(N):
-    #     model.add_constraint(sum(x[i, j] for j in range(K)) <= 10)
-    # obj_fn = sum(v[i]*x[i,j] for i in range(N) for j in range(K))
-    # model.set_objective("max", obj_fn)
-    
-    # BINARY KNAPSACK
-    v, w, C, N = instance_db.get_bkp_instance(instance_num)
-    K = 1
-    C = [C]
-    model = Model('binary knapsack', log_output=verbose)
+    v, w, C, K, N = instance_db.get_bkp_instance_as_mkp(instance_num)
+    model = Model('multiple knapsack', log_output=verbose)
     x = model.integer_var_matrix(N, K, name="x")
     for j in range(K):
         model.add_constraint(sum(w[i]*x[i, j] for i in range(N)) <= C[j])
     for i in range(N):
-        model.add_constraint(sum(x[i, j] for j in range(K)) <= 1)
+        model.add_constraint(sum(x[i, j] for j in range(K)) <= 10)
     obj_fn = sum(v[i]*x[i,j] for i in range(N) for j in range(K))
     model.set_objective("max", obj_fn)
+    
+    # BINARY KNAPSACK
+    # v, w, C, N = instance_db.get_bkp_instance(instance_num)
+    # K = 1
+    # C = [C]
+    # model = Model('binary knapsack', log_output=verbose)
+    # x = model.integer_var_matrix(N, K, name="x")
+    # for j in range(K):
+    #     model.add_constraint(sum(w[i]*x[i, j] for i in range(N)) <= C[j])
+    # for i in range(N):
+    #     model.add_constraint(sum(x[i, j] for j in range(K)) <= 1)
+    # obj_fn = sum(v[i]*x[i,j] for i in range(N) for j in range(K))
+    # model.set_objective("max", obj_fn)
 
     # Transforming DOCPLEX.MP.MODEL into a CPX.CPLEX object
     filename = "problem.lp"
@@ -248,6 +250,7 @@ def init_cplex_model(instance_num, verbose=False):
 
     # Displays node information every X nodes
     cplex.parameters.mip.interval.set(1)
+    cplex.parameters.mip.limits.nodes.set(5000)
 
     # Turning off presolving callbacks
     cplex.parameters.preprocessing.presolve.set(0) # Decides whether CPLEX applies presolve during preprocessing to simplify and reduce problems
@@ -307,10 +310,12 @@ if __name__ == "__main__":
     elif args['training_scheme'] == TRAIN_ON_SINGLE:
         instances_to_train = [args['single_instance']]
         
-    dqn = DQN(n_actions=len(BRANCHING_TYPES))
+    dqn = DQN(n_actions=len(BRANCHING_TYPES), n_inputs=7)
     action_history = []
     reward_history = []
     optgap_history = []
+
+    cplex_history = []
 
     for episode in range(episodes):
         for instance_num in instances_to_train:
@@ -322,10 +327,23 @@ if __name__ == "__main__":
             action_history = np.append(action_history, branch_callback.action_history)
             reward_history = np.append(reward_history, branch_callback.reward_history)
             optgap_history = np.append(optgap_history, branch_callback.optgap_history)
+            cplex_history.append((
+                instance_db.get_bkp_filenames()[instance_num],
+                branch_callback.nodes_count, 
+                cplex.solution.MIP.get_mip_relative_gap(),
+                cplex.solution.MIP.get_best_objective()))
 
             plotter.plot_action_history(action_history, BRANCHING_TYPES, episode, args['execution_name'])
             plotter.plot_reward_history(reward_history, episode, args['execution_name'])
             plotter.plot_generic(dqn.loss_history, "DQN Loss", episode, args['execution_name'])
             plotter.plot_generic(optgap_history, "Optimality Gap", episode, args['execution_name'])
-        
+
+    for filename, nodes_opened, gap, best_objective in cplex_history:
+        print(f"{filename}")
+        print(f"-- Nodes opened: {nodes_opened}")
+        print(f"-- Optimal gap: {gap}")
+        print(f"-- Best objective: {best_objective}")
+        print()
+
+    pdb.set_trace()
     print('Done')

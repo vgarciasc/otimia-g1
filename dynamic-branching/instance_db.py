@@ -1,6 +1,7 @@
 import numpy as np
 import pdb
-import os 
+import os
+
 def get_mkp_instance(id):
     if id == 0:
         # Instance no. 0
@@ -99,6 +100,12 @@ def read_instance_from_file(filepath):
 
 def get_bkp_instance(id=0):    
     return read_instance_from_file("files/instances_01_KP/" + get_bkp_filenames()[id])
+
+def get_bkp_instance_as_mkp(instance_num):
+    v, w, C, N = get_bkp_instance(instance_num)
+    K = 3
+    C = [C, C, C]
+    return v, w, C, K, N
 
 if __name__ == "__main__":
     get_bkp_instance(2)
