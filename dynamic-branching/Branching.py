@@ -228,7 +228,7 @@ def init_cplex_model(instance_num, verbose=False):
     # model.set_objective("max", obj_fn)
     
     # BINARY KNAPSACK
-    v, w, C, N = instance_db.get_bkp_instance(instance_num)
+    v, w, C, N = instance_db.get_bkp_instance_hard(instance_num)
     K = 1
     C = [C]
     model = Model('binary knapsack', log_output=verbose)
@@ -241,21 +241,22 @@ def init_cplex_model(instance_num, verbose=False):
     model.set_objective("max", obj_fn)
 
     # Transforming DOCPLEX.MP.MODEL into a CPX.CPLEX object
-    filename = "data/problem.lp"
+    filename = "problem.lp"
     model.dump_as_lp(filename)
     cplex = CPX.Cplex(filename)
+    os.remove(filename)
 
     # Displays node information every X nodes
     cplex.parameters.mip.interval.set(1)
 
     # Turning off presolving callbacks
-    cplex.parameters.preprocessing.presolve.set(0) # Decides whether CPLEX applies presolve during preprocessing to simplify and reduce problems
-    cplex.parameters.preprocessing.aggregator.set(0) # Invokes the aggregator to use substitution where possible to reduce the number of rows and columns before the problem is solved. If set to a positive value, the aggregator is applied the specified number of times or until no more reductions are possible.
-    cplex.parameters.preprocessing.relax.set(0) # Decides whether LP presolve is applied to the root relaxation in a mixed integer program (MIP). Sometimes additional reductions can be made beyond any MIP presolve reductions that were already done. By default, CPLEX applies presolve to the initial relaxation in order to hasten time to the initial solution.
-    cplex.parameters.preprocessing.numpass.set(0) # Limits the number of pre-resolution passes that CPLEX makes during pre-processing. When this parameter is set to a positive value, pre-resolution is applied for the specified number of times or until no further reduction is possible.
-    cplex.parameters.mip.cuts.mircut.set(-1) # Decides whether or not to generate MIR cuts (mixed integer rounding cuts) for the problem.
+    # cplex.parameters.preprocessing.presolve.set(0) # Decides whether CPLEX applies presolve during preprocessing to simplify and reduce problems
+    # cplex.parameters.preprocessing.aggregator.set(0) # Invokes the aggregator to use substitution where possible to reduce the number of rows and columns before the problem is solved. If set to a positive value, the aggregator is applied the specified number of times or until no more reductions are possible.
+    # cplex.parameters.preprocessing.relax.set(0) # Decides whether LP presolve is applied to the root relaxation in a mixed integer program (MIP). Sometimes additional reductions can be made beyond any MIP presolve reductions that were already done. By default, CPLEX applies presolve to the initial relaxation in order to hasten time to the initial solution.
+    # cplex.parameters.preprocessing.numpass.set(0) # Limits the number of pre-resolution passes that CPLEX makes during pre-processing. When this parameter is set to a positive value, pre-resolution is applied for the specified number of times or until no further reduction is possible.
+    # cplex.parameters.mip.cuts.mircut.set(-1) # Decides whether or not to generate MIR cuts (mixed integer rounding cuts) for the problem.
 
-    cplex.parameters.mip.strategy.variableselect.set(3) # Pseudo-cost branching: DO NOT CHANGE!
+    # cplex.parameters.mip.strategy.variableselect.set(3) # Pseudo-cost branching: DO NOT CHANGE!
 
     num_vars = cplex.variables.get_num()
 
@@ -287,7 +288,7 @@ if __name__ == "__main__":
     episodes = args['episodes']
 
     if args['training_scheme'] == TRAIN_ON_EVERY:
-        instances_to_train = [i for i, _ in enumerate(instance_db.get_bkp_instances())]
+        instances_to_train = [i for i, _ in enumerate(instance_db.get_bkp_filenames_hard())]
     elif args['training_scheme'] == TRAIN_ON_SINGLE:
         instances_to_train = [args['single_instance']]
         
