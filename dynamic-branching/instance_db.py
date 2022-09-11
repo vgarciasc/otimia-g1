@@ -60,12 +60,7 @@ def read_instance_from_file(filepath):
         C = parsed[0][1]
         v, w = zip(*parsed[1:-2])
         N = len(w) # N = parsed[0][0]
-        print( "v: ", v, len(v))
-        print( "w: ", w, len(w))
-        print( "C: ", C)
-        print( "N: ", N)
         return v, w, C, N
-
 
 def get_bkp_instance(id=0, folder=0):
     files = get_bkp_filenames(folder)
