@@ -30,7 +30,7 @@ S_GAP = 1
 
 class DQN:
     def __init__(self, memory_size=5*10**5, batch_size=32, gamma=0.99,
-        exploration_max=1.0, exploration_min=0.1, exploration_decay=0.9999,
+        exploration_max=1.0, exploration_min=0.1, exploration_decay=0.99999,
         learning_rate=0.001, tau=0.125, n_actions=4, n_inputs=2):
         
         self.memory = deque(maxlen=memory_size)
@@ -118,9 +118,9 @@ class DQN:
         b = min(1, np.exp((state[S_GAP] - next_state[S_GAP]) / T))
 
         if next_state[S_GAP] < state[S_GAP]:
-            return 100*b
+            return 0 #100*b
         else:
-            return T*b
+            return  T*b -1 # T*b
 
     def save_model(self, fn):
         self.model.save('dqn-models/'+fn)
