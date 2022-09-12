@@ -117,9 +117,9 @@ def get_bkp_filenames_train():
 def get_bkp_filenames_test():
     files = [
         "large_scale/knapPI_1_100_1000_1",
-        # "large_scale/knapPI_1_500_1000_1",
-        # "large_scale/knapPI_2_1000_1000_1",
-        # "all/probT1_1W_R50_T002_M010_N0020_seed02.txt",
+        "all/probT1_1W_R50_T002_M010_N0020_seed02.txt",
+        "all/probT1_1W_R50_T002_M010_N0020_seed01.txt",
+        "all/probT1_1W_R50_T002_M010_N0020_seed03.txt",
     ]
     return files
 
@@ -143,9 +143,7 @@ def get_bkp_filenames_hard():
         "n_400_c_10000000000_g_6_f_0.1_eps_0_s_200.txt",
         "n_800_c_100000000_g_6_f_0.1_eps_0.1_s_300.txt",
         "n_800_c_1000000_g_14_f_0.1_eps_0.1_s_100.txt",
-        "n_800_c_100000000_g_6_f_0.1_eps_0.1_s_300.txt",
         "n_1000_c_1000000_g_14_f_0.2_eps_0.1_s_100.txt",
-        "n_1200_c_100000000_g_6_f_0.3_eps_0.1_s_200.txt",
     ]
     return files
 
@@ -175,7 +173,8 @@ def read_instance_from_file_mkp(filepath):
         return v, w, C, K, N, max_in_knapsack
 
 def get_instance(instance_num, train):
-    if (instance_num < 6 and train) or (instance_num < 3 and not train):
+    # if (instance_num < 6 and train):
+    if (instance_num < 6 and train) or (instance_num < 1 and not train):
         path = "files/instances_01_KP/"
         if train:
             path += get_bkp_filenames_train()[instance_num]
