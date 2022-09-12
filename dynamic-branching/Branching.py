@@ -176,8 +176,8 @@ class BranchCB(CPX_CB.BranchCallback):
             if self.training:
                 action = dqn.get_action(state)
             else:
-                action = dqn.target_model(state)
-                action = np.argmax(action)
+                action_probs = dqn.model(state)
+                action = np.argmax(action_probs)
         else:
             action = self.branching_strategy
 

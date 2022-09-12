@@ -118,6 +118,10 @@ if __name__ == "__main__":
     #     "data/boltzmann_depth_gap_ep29_TESTING_instance_2_action_history_test.csv", 
     #     "Boltzmann Depth Gap on instance \n'all/probT1_1W_R50_T002_M010_N0020_seed01'")
 
+    # plot_actions_in_test_instance(
+    #     "data/punitive_boltzmann_depth_gap_ep28_TESTING_instance_4_hard_action_history_test.csv", 
+    #     "Punitive Boltzmann Depth Gap on instance \n'n_800_c_1000000_g_14_f_0.1_eps_0.1_s_100'")
+
     plot_actions_in_test_instance(
-        "data/boltzmann_depth_gap_ep29_TESTING_instance_5_hard_action_history_test.csv", 
-        "Boltzmann Depth Gap on instance \n'n_1000_c_1000000_g_14_f_0.2_eps_0.1_s_100'")
+        "data/punitive_boltzmann_depth_gap_ep28_TESTING_instance_5_hard_action_history_test.csv", 
+        "Punitive Boltzmann Depth Gap on instance \n'n_1000_c_1000000_g_14_f_0.2_eps_0.1_s_100'")
