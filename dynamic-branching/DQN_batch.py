@@ -4,6 +4,9 @@ import numpy as np
 import random
 from collections import deque
 from math import fabs, floor
+import os
+
+os.environ["KERAS_BACKEND"] = "plaidml.bridge.keras"
 
 # Gym imports
 import gym
@@ -12,13 +15,13 @@ from gym.spaces import Discrete, Box
 
 
 # Keras imports
+import tensorflow as tf
 from keras.models import Sequential
 from keras.layers import Dense, Dropout
 from keras.optimizers import Adam
 # from rl.agents import DQNAgent
 # from rl.policy import BoltzmannQPolicy
 # from rl.memory import SequentialMemory
-import tensorflow as tf
 
 # multthreading imports
 import threading
@@ -46,33 +49,37 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-class MyBranch(CPX_CB.BranchCallback):
-
+class BranchCB(CPX_CB.BranchCallback):
     def set_model(self, model):
         self.m = model
-        # self.m.parameters.mip.strategy.variableselect = 2 # only for testing
+    def bind_list(self, l):
+        self.nodes_to_process = l
 
     def __call__(self):
         # Counter of how many times the callback was called
         self.times_called += 1
         br_type = self.get_branch_type()
-        if br_type == self.branch_type.SOS1 or br_type == self.branch_type.SOS2:
-            return
+        #if br_type == self.branch_type.SOS1 or br_type == self.branch_type.SOS2:
+        #    return
         # Getting information about state of node and tree
         x = self.get_values()
-        self.get_node_data
+
         objval = self.get_objective_value()
+        best_objval = self.get_best_objective_value()
+
         obj    = self.get_objective_coefficients()
         feas   = self.get_feasibilities()
 
-        client_socket.send((str(objval)+';'+str(objval)).encode())  # send message
+        # client_socket.send((str(objval)+';'+str(best_objval)+';'+str(incumbentval)+';'+str(cutoff)).encode())  # send message
+        client_socket.send((str(objval)).encode())  # send message
         data = client_socket.recv(1024).decode()  # receive response
 
         maxobj = -CPX.infinity
         maxinf = -CPX.infinity
         bestj  = -1
-        branching = data
-
+        branching = int(data)
+        branch_d = -1
+        branch_u = -1
         # print('branching type: ', branching, '-- Times called: ', self.times_called)
         if branching == 0: # Branch on variable with most fractional value (nearest to 0.5)
             # MOST FRACTIONAL BRANCHING
@@ -88,12 +95,13 @@ class MyBranch(CPX_CB.BranchCallback):
                         maxobj = fabs(obj[j])
 
         elif branching == 1: # Branch on random variable
-            # RANDOM BRANCHING
             feasible_vars = [i for i in range(len(x)) if feas[i] == self.feasibility_status.infeasible]
             if len(feasible_vars) == 0:
                 return
             bestj = int(np.random.choice(feasible_vars))
-        
+            if bestj < 0:
+                return
+
         elif branching == 2:
             self.m.parameters.mip.strategy.variableselect = -1 # Branch on variable with minimum infeasibility
         elif branching == 3:
@@ -106,23 +114,55 @@ class MyBranch(CPX_CB.BranchCallback):
             self.m.parameters.mip.strategy.variableselect = 4 # Branch based on pseudo reduced costs
         elif branching == 99:
             self.m.parameters.mip.strategy.variableselect = 0 # Automatic: let CPLEX choose variable to branch on; default
-          
 
-        if bestj < 0:
-            return
+
+        # Making the branching  
+        if branching == 0 or branching == 1:
+            xj_lo = floor(x[bestj])
+
+            branch_d = self.make_branch(objval, variables = [(bestj, "U", xj_lo)], node_data = {'var':bestj, 'parent': self.get_node_ID(),'var_val_base':xj_lo, 'type':"DOWN"})
+            branch_u = self.make_branch(objval, variables = [(bestj, "L", xj_lo + 1)], node_data = {'var':bestj, 'parent': self.get_node_ID(),'var_val_base':xj_lo, 'type':"UP"})
+        else:
+            branch_d = self.make_branch(objval, node_data={'parent':self.get_node_ID()})
+            branch_u = self.make_branch(objval, node_data={'parent':self.get_node_ID()})
+
+        node_id = self.get_node_ID() # node id of the current node
+        incumbentval = self.get_incumbent_objective_value() # value of the incumbent solution
+        cutoff = self.get_cutoff() # cutoff value
+
+        self.nodes_to_process.append({'node_id':node_id, 
+                                    'branchd_d': branch_d[0], 
+                                    'branch_u': branch_u[0], 
+                                    'best_objval': best_objval, # best objective function value, i.e. the best known dual bound
+                                    'objval': objval,  # function value at the current node
+                                    'incumbentval': incumbentval, # value of the incumbent/current solution
+                                    'cutoff': cutoff}) # cutoff value, i.e. the best known primal bound
+        obj_posbranch = self.get_objective_value()
+
+
+class NodeCB(CPX_CB.NodeCallback):
+
+    def bind_list(self, l):
+        self.nodes_to_process = l
+
+    def __call__(self):
+        # Counter of how many times the callback was called
+        self.times_called += 1
+
+class MIPInfoCB(CPX_CB.MIPInfoCallback):
     
-        # Making the branching
-        xj_lo = floor(x[bestj])
-        # print('obj pre: ', objval)
-        branch_u = self.make_branch(objval, variables = [(bestj, "L", xj_lo + 1)], node_data = (bestj, xj_lo, "UP"))
-        branch_d = self.make_branch(objval, variables = [(bestj, "U", xj_lo)], node_data = (bestj, xj_lo, "DOWN"))
-        obj_pos_branch = self.get_objective_value()
-        # print('obj pos: ', obj_pos_branch)
+        def bind_list(self, l):
+            self.nodes_to_process = l
+    
+        def __call__(self):
+            # Counter of how many times the callback was called
+            self.times_called += 1
+
 
 def init_cplex_model():
 
     instances = 1
-    select_instance = np.random.randint(0, instances+1)
+    select_instance = 1 # np.random.randint(0, instances+1)
     if select_instance == 0:
         # Instance no.1
         w = [4, 2, 5, 4, 5, 1, 3, 5]
@@ -143,22 +183,50 @@ def init_cplex_model():
         K = 10
 
     N = len(w)
-    cplex_m = Model('multiple knapsack', log_output=False)
+    cplex_m = Model('multiple knapsack', log_output=True)
 
     # If set to X, information will be displayed every X iterations
     # m.parameters.mip.interval.set(1)
 
     # Turning off presolving callbacks
-    cplex_m.parameters.preprocessing.presolve.set(0)
-    cplex_m.parameters.preprocessing.aggregator.set(0)
-    cplex_m.parameters.preprocessing.reduce.set(0)
-    cplex_m.parameters.preprocessing.relax.set(0)
-    cplex_m.parameters.preprocessing.numpass.set(0)
-    # m.parameters.mip.interval(-1)
+    cplex_m.parameters.preprocessing.presolve.set(0) # Decides whether CPLEX applies presolve during preprocessing to simplify and reduce problems
+    cplex_m.parameters.preprocessing.aggregator.set(0) # Invokes the aggregator to use substitution where possible to reduce the number of rows and columns before the problem is solved. If set to a positive value, the aggregator is applied the specified number of times or until no more reductions are possible.
+    cplex_m.parameters.preprocessing.reduce.set(0) # 
+    # cplex_m.parameters.preprocessing.linear.set(0) # Decides whether linear or full reductions occur during preprocessing. If only linear reductions are performed, each variable in the original model can be expressed as a linear form of variables in the presolved model. This condition guarantees, for example, that users can add their own custom cuts to the presolved model.
+    cplex_m.parameters.preprocessing.relax.set(0) # Decides whether LP presolve is applied to the root relaxation in a mixed integer program (MIP). Sometimes additional reductions can be made beyond any MIP presolve reductions that were already done. By default, CPLEX applies presolve to the initial relaxation in order to hasten time to the initial solution.
+    cplex_m.parameters.preprocessing.numpass.set(0) # Limits the number of pre-resolution passes that CPLEX makes during pre-processing. When this parameter is set to a positive value, pre-resolution is applied for the specified number of times or until no further reduction is possible.
+    
+    cplex_m.parameters.advance.set(0) # If 1 or 2, this parameter specifies that CPLEX should use advanced starting information when it initiates optimization.
+    cplex_m.parameters.preprocessing.qcpduals.set(0) # This parameter determines whether CPLEX preprocesses a quadratically constrained program (QCP) so that the user can access dual values for the QCP.
+    cplex_m.parameters.preprocessing.qpmakepsd.set(0) # Decides whether CPLEX will attempt to reformulate a MIQP or MIQCP model that contains only binary variables. When this feature is active, adjustments will be made to the elements of a quadratic matrix that is not nominally positive semi-definite (PSD, as required by CPLEX for all QP and most QCP formulations), to make it PSD, and CPLEX will also attempt to tighten an already PSD matrix for better numerical behavior.
+    cplex_m.parameters.preprocessing.qtolin.set(0) # This parameter switches on or off linearization of the quadratic terms in the objective function of a quadratic program (QP) or of a mixed integer quadratic program (MIQP) during preprocessing.
+    cplex_m.parameters.preprocessing.repeatpresolve.set(0) # Specifies whether to re-apply presolve, with or without cuts, to a MIP model after processing at the root is otherwise complete.
+    cplex_m.parameters.preprocessing.dual.set(0) # Decides whether the CPLEX pre-solution should pass the primal or dual linear programming problem to the linear programming optimization algorithm.
+    cplex_m.parameters.preprocessing.fill.set(0) # Limits number of variable substitutions by the aggregator. If the net result of a single substitution is more nonzeros than this value, the substitution is not made.
+    cplex_m.parameters.preprocessing.coeffreduce.set(0) # Decides how coefficient reduction is used. Coefficient reduction improves the objective value of the initial (and subsequent) LP relaxations solved during branch and cut by reducing the number of non-integral vertices. By default, CPLEX applies coefficient reductions during preprocessing of a model.
+    cplex_m.parameters.preprocessing.boundstrength.set(0) # Decides whether to apply bound strengthening in mixed integer programs (MIPs). Bound strengthening tightens the bounds on variables, perhaps to the point where the variable can be fixed and thus removed from consideration during branch and cut.
+    cplex_m.parameters.preprocessing.dependency.set(0) # Decides whether to activate the dependency checker. If on, the dependency checker searches for dependent rows during preprocessing. If off, dependent rows are not identified.
+    cplex_m.parameters.preprocessing.folding.set(0) # Decides whether folding will be automatically executed, during the preprocessing phase, in a LP model.
+    cplex_m.parameters.preprocessing.symmetry.set(0) # Decides whether symmetry breaking reductions will be automatically executed, during the preprocessing phase, in either a MIP or LP model.
+    cplex_m.parameters.preprocessing.sos1reform.set(-1) # This parameter allows you to control the reformulation of special ordered sets of type 1 (SOS1), which can be applied during the solution process of problems containing these sets.
+    cplex_m.parameters.preprocessing.sos2reform.set(-1) # This parameter allows you to control the reformulation of special ordered sets of type 2 (SOS2), which can be applied during the solution process of problems containing these sets.
+    cplex_m.parameters.mip.cuts.mircut(-1) # Decides whether or not to generate MIR cuts (mixed integer rounding cuts) for the problem.
+
     # Registering the branching callback
-    branch_instance = cplex_m.register_callback(MyBranch)
-    branch_instance.set_model(cplex_m)
+    nodes_to_process = []
+    branch_instance = cplex_m.register_callback(BranchCB)
     branch_instance.times_called = 0
+    branch_instance.set_model(cplex_m)
+    branch_instance.bind_list(nodes_to_process)
+
+    node_instance = cplex_m.register_callback(NodeCB)
+    node_instance.times_called = 0
+    node_instance.bind_list(nodes_to_process)
+
+    mipinfo_instance = cplex_m.register_callback(MIPInfoCB)
+    mipinfo_instance.times_called = 0
+    mipinfo_instance.bind_list(nodes_to_process)
+
 
     # Adding variables
     x = cplex_m.integer_var_matrix(N, K, name="x")
@@ -183,9 +251,13 @@ def init_cplex_model():
     # m.print_solution()
 
     # Displaying final information
-    # m.print_information()     
-    # print(f"branch_instance.times_called: {branch_instance.times_called}")
+    # cplex_m.print_information()     
+
+    print(f"branch_instance.times_called: {branch_instance.times_called}")
+    print(f"node_instance.times_called: {node_instance.times_called}")
+    print(f"mipinfo_instance.times_called: {mipinfo_instance.times_called}")
     # print(f"max: {m.solution.get_objective_value()}")
+
     if sol is None:
         print("Infeasible")
 
@@ -205,7 +277,7 @@ class CustomEnv(Env):
         # state, _ = np.array([np.array([i], dtype=np.float64) for i in data.split(sep=';')], dtype=np.float64)
         self.state = -1
         self.done = False
-        
+    
     def step(self, action):
         
         server_conn.send(str(action).encode())
@@ -218,13 +290,14 @@ class CustomEnv(Env):
             return self.state, reward, self.done, self.state, info
         
         self.last_state = self.state
-        self.state, new_state = np.array([np.array([i], dtype=np.float32) for i in data.split(sep=';')], dtype=np.float32)
-        
+        #self.state = np.array([np.array([i], dtype=np.float32) for i in data.split(sep=';')], dtype=np.float32)
+        self.state = np.array([np.float32(data)])
+
         # Calculate reward
         if self.state[0] > self.last_state[0]:
-            reward = 10
+            reward = 100
         if self.state[0] < self.last_state[0]:
-            reward = -1
+            reward = -5
         else: 
             reward = 0
 
@@ -232,11 +305,8 @@ class CustomEnv(Env):
         info = {}
         
         # Return step information
-        return new_state, reward, self.done, self.state, info
+        return self.state, reward, self.done, self.state, info
 
-    def render(self):
-        pass
-    
     def reset(self):
 
         # reinit the model
@@ -248,7 +318,7 @@ class CustomEnv(Env):
             self.done = True
             return self.state
 
-        self.state, _ = np.array([np.array([i], dtype=np.float32) for i in data.split(sep=';')], dtype=np.float32)
+        self.state = np.array([np.float32(data)])
         self.done = False
         return self.state
 
@@ -294,11 +364,13 @@ class DQN:
 
     def replay(self):
         if len(self.memory) < self.batch_size:
-            return
-
+            return 
         samples = random.sample(self.memory, self.batch_size)
         states = np.array([sample[0] for sample in samples])
-        # states, actions, rewards, new_states, dones = zip(*samples)
+        states, actions, rewards, new_states, dones = zip(*samples)
+        #targets = self.target_model.predict(states, batch_size=self.batch_size, verbose=False).numpy()[0]
+        #Qs_future = max(self.target_model(new_states)[0])
+        #targets[actions] = rewards + Qs_future * self.gamma
         targets = np.empty(shape=(1,self.env.action_space.n), dtype=np.float32)
         for state, action, reward, new_state, done in samples:
             # target = self.target_model.predict(state, verbose=0)
@@ -327,7 +399,7 @@ class DQN:
 
 def create_client_socket(client_socket):
     client_socket.connect((host, port))  # connect to the server
-    client_socket.sendall(f'{bcolors.OKBLUE}Client (CPLEX) connected successfully!{bcolors.ENDC}'.encode())
+    client_socket.sendall(f'{bcolors.OKBLUE} Client (CPLEX) connected successfully! {bcolors.ENDC}'.encode())
 
 if __name__ == "__main__":
     
@@ -358,15 +430,16 @@ if __name__ == "__main__":
     best_model = None
 
     history = []
+    print_times = False
 
     for episode in range(episodes):
         cur_state = env.reset()
+        done = env.done
         rewards_history = []
         start = time.time()
         i=0
-        while not env.done:
+        while not done:
             i+=1
-            print_times = False
             if print_times:
                 s = time.time()
             action = model.get_action(cur_state)
