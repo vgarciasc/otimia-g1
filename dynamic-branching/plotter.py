@@ -21,7 +21,7 @@ def plot_action_history(action_history, branching_types, execution_name):
     plt.xlabel("Iteration")
     plt.legend()
     #plt.savefig("actions"+str(episode)+".png")
-    plt.savefig(f"data/actions_{execution_name}.png")
+    plt.savefig(f"data/{execution_name}_actions.png")
     # plt.show()
     plt.close('all')
 
@@ -38,7 +38,7 @@ def plot_reward_history(reward_history, execution_name):
     # plt.plot(reward_history, color='cyan', linestyle='dashed', label='Absolute reward')
     plt.xlabel("Iteration")
     plt.legend()
-    plt.savefig(f"data/rewards_{execution_name}")
+    plt.savefig(f"data/{execution_name}_rewards")
     # plt.show()
     plt.close('all')
 
@@ -49,6 +49,6 @@ def plot_generic(array, s, execution_name):
       plt.plot(i, np.mean(array[i-100:i]), "bo")
   plt.xlabel("Iteration")
   plt.legend()
-  plt.savefig(f"data/{s}_{execution_name}")
+  plt.savefig(f"data/{execution_name}_{s}")
   plt.close('all')
     

@@ -117,11 +117,41 @@ def get_bkp_filenames_train():
 def get_bkp_filenames_test():
     files = [
         "large_scale/knapPI_1_100_1000_1",
-        "large_scale/knapPI_1_500_1000_1",
-        "large_scale/knapPI_2_1000_1000_1",
-        "all/probT1_1W_R50_T002_M010_N0020_seed02.txt",
+        # "large_scale/knapPI_1_500_1000_1",
+        # "large_scale/knapPI_2_1000_1000_1",
+        # "all/probT1_1W_R50_T002_M010_N0020_seed02.txt",
     ]
     return files
+
+def read_instance_from_file_hard(filepath):
+    with open(filepath) as f:
+        parsed = [[int(a) for a in k.strip().split(" ")] for k in f.readlines()]
+        N = parsed[0][0]
+        C = parsed[-1][0]
+        C = [C]
+        K = 1
+        
+        ids, v, w = zip(*parsed[1:-1])
+        max_in_knapsack = 1
+
+        return v, w, C, K, N, max_in_knapsack
+
+def get_bkp_filenames_hard():
+    files = [
+        "n_400_c_1000000_g_2_f_0.2_eps_0_s_200.txt",
+        "n_400_c_100000000_g_2_f_0.3_eps_0.0001_s_100.txt",
+        "n_400_c_10000000000_g_6_f_0.1_eps_0_s_200.txt",
+        "n_800_c_100000000_g_6_f_0.1_eps_0.1_s_300.txt",
+        "n_800_c_1000000_g_14_f_0.1_eps_0.1_s_100.txt",
+        "n_800_c_100000000_g_6_f_0.1_eps_0.1_s_300.txt",
+        "n_1000_c_1000000_g_14_f_0.2_eps_0.1_s_100.txt",
+        "n_1200_c_100000000_g_6_f_0.3_eps_0.1_s_200.txt",
+    ]
+    return files
+
+def get_bkp_instance_hard(id=0):
+    files = get_bkp_filenames_hard()
+    return read_instance_from_file_hard("files/instances_01_KP_HARD/" + files[id])
 
 def read_instance_from_file(filepath):
     with open(filepath) as f:
@@ -140,7 +170,9 @@ def read_instance_from_file_mkp(filepath):
         C = np.transpose(parsed[2:K+2])[0]
         v, w = zip(*parsed[K+2:])
         N = len(w)
-        return v, w, C, K, N
+
+        max_in_knapsack = 10
+        return v, w, C, K, N, max_in_knapsack
 
 def get_instance(instance_num, train):
     if (instance_num < 6 and train) or (instance_num < 3 and not train):
@@ -152,7 +184,7 @@ def get_instance(instance_num, train):
         v, w, C, N = read_instance_from_file(path)
         K = 3
         C = [C, C, C]
-        return v, w, C, K, N
+        return v, w, C, K, N, 10
     else:
         path = "files/instances_01_MKP/"
         if train:

@@ -20,6 +20,7 @@ BRANCHING_TYPES = ["Most Infeasible", "Random", "Strong", "Pseudo-cost"]
 TRAIN_ON_EVERY = 0
 TRAIN_ON_SINGLE = 1
 BRANCHING_RL = -1
+MAX_ITERS = 10000
 
 class BranchCB(CPX_CB.BranchCallback):
     def init(self, _lista):
@@ -28,6 +29,7 @@ class BranchCB(CPX_CB.BranchCallback):
         self.times_called = 0
         self.report_count = 0
         self.nodes_count = 0
+        self.nodes_count_cplex = 0
         self.action_history = []
         self.reward_history = []
         self.optgap_history = []
@@ -146,6 +148,7 @@ class BranchCB(CPX_CB.BranchCallback):
     def __call__(self):
         # Counter of how many times the callback was called
         self.times_called += 1
+        self.nodes_count_cplex = self.get_num_nodes()
         
         # Getting information about state of node and tree
         last_node_data = self.get_node_data()
@@ -159,7 +162,7 @@ class BranchCB(CPX_CB.BranchCallback):
 
         # NOTE: Every info should be normalized between 0 and 1!
         state = np.array([[
-            self.get_current_node_depth() / ceil(np.log2(5000)), # current depth normalized by maximum depth
+            self.get_current_node_depth() / ceil(np.log2(MAX_ITERS)), # current depth normalized by maximum depth
             gap, # optimal gap
             np.mean(self.get_feasibilities()), # percentage of feasible variables
             1 - num_set_variables / len(self.get_values()), # percentage of unset variables (DASH)
@@ -173,6 +176,7 @@ class BranchCB(CPX_CB.BranchCallback):
                 action = dqn.get_action(state)
             else:
                 action = dqn.target_model(state)
+                action = np.argmax(action)
         else:
             action = self.branching_strategy
 
@@ -196,29 +200,35 @@ class BranchCB(CPX_CB.BranchCallback):
 
         if self.branching_strategy == -1 and last_node_data is not None:
             # Previous state and action are stored in 'node_data' object
-            # Because we don't know the reward and next_state until the
-            # children nodes are processed
             last_state = last_node_data['state']
             last_action = last_node_data['action']
             last_reward = dqn.calc_reward(last_state, state)
             self.action_history.append(last_action)
             self.reward_history.append(last_reward)
-            self.optgap_history.append(gap)
+
+            # Because we don't know the reward and next_state until the
+            # children nodes are processed
             if self.training:
                 dqn.remember(last_state, last_action, last_reward, state, False)           
                 if self.times_called % 32 == 0:
                     dqn.replay()
                     dqn.target_train()
+        
+        self.optgap_history.append(gap)
 
-def init_cplex_model(instance_num, training, verbose=False):
+def init_cplex_model(instance_num, instance_name, training, verbose=False):
     # MULTIPLE KNAPSACK
-    v, w, C, K, N = instance_db.get_instance(instance_num, training)
+    if instance_name[0] == "n":
+        v, w, C, K, N, Q = instance_db.get_bkp_instance_hard(instance_num)
+    else:
+        v, w, C, K, N, Q = instance_db.get_instance(instance_num, training)
+    
     model = Model('multiple knapsack', log_output=verbose)
     x = model.integer_var_matrix(N, K, name="x")
     for j in range(K):
         model.add_constraint(sum(w[i]*x[i, j] for i in range(N)) <= C[j])
     for i in range(N):
-        model.add_constraint(sum(x[i, j] for j in range(K)) <= 10)
+        model.add_constraint(sum(x[i, j] for j in range(K)) <= Q)
     obj_fn = sum(v[i]*x[i,j] for i in range(N) for j in range(K))
     model.set_objective("max", obj_fn)
     
@@ -242,8 +252,8 @@ def init_cplex_model(instance_num, training, verbose=False):
     os.remove(filename)
 
     # Displays node information every X nodes
-    cplex.parameters.mip.interval.set(1)
-    cplex.parameters.mip.limits.nodes.set(5000)
+    cplex.parameters.mip.interval.set(1000)
+    cplex.parameters.mip.limits.nodes.set(MAX_ITERS)
 
     # Turning off presolving callbacks
     cplex.parameters.preprocessing.presolve.set(0) # Decides whether CPLEX applies presolve during preprocessing to simplify and reduce problems
@@ -287,99 +297,130 @@ def init_cplex_model(instance_num, training, verbose=False):
     return cplex, branch_callback
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Dynamic Branching')
-    parser.add_argument('--episodes', help="How many episodes run?", required=True, type=int)
-    parser.add_argument('--branching_strategy', help="Which branching strategy to use?", required=True, type=int)
-    parser.add_argument('--training_scheme', help='Which training scheme to use? 0 is train on every instance, 1 is train on single instance', required=False, default=-1, type=int)
-    parser.add_argument('--single_instance', help='Which single instance to run?', required=False, default=-1, type=int)
-    parser.add_argument('--execution_name', help='What is the execution name?', required=False, default="", type=str)
-    parser.add_argument('--verbose', help='Is verbose?', required=False, default=False, type=lambda x: (str(x).lower() == 'true'))
-    args = vars(parser.parse_args())
+    try:
+        parser = argparse.ArgumentParser(description='Dynamic Branching')
+        parser.add_argument('--episodes', help="How many episodes to run during training? Leave 0 for no training.", required=True, type=int)
+        parser.add_argument('--branching_strategy', help="Which branching strategy to use?", required=True, type=int)
+        parser.add_argument('--training_scheme', help='Which training scheme to use? 0 is train on every instance, 1 is train on single instance', required=False, default=0, type=int)
+        parser.add_argument('--single_instance', help='Which single instance to run?', required=False, default=-1, type=int)
+        parser.add_argument('--execution_name', help='What is the execution name?', required=False, default="", type=str)
+        parser.add_argument('--load_model', help='Which model should we load? Leave empty if training from scratch', required=False, default=None, type=str)
+        parser.add_argument('--should_save_figures', help='Should save figures?', required=False, default=True, type=lambda x: (str(x).lower() == 'true'))
+        parser.add_argument('--should_save_history', help='Should save history?', required=False, default=True, type=lambda x: (str(x).lower() == 'true'))
+        parser.add_argument('--should_save_model', help='Should save model?', required=False, default=True, type=lambda x: (str(x).lower() == 'true'))
+        parser.add_argument('--verbose', help='Is verbose?', required=False, default=False, type=lambda x: (str(x).lower() == 'true'))
+        args = vars(parser.parse_args())
 
-    episodes = args['episodes']
+        episodes = args['episodes']
 
-    if args['training_scheme'] == TRAIN_ON_EVERY:
-        instances_to_train = [(id, name) for id, name in enumerate(instance_db.get_bkp_filenames_train())]
+        if args['training_scheme'] == TRAIN_ON_EVERY:
+            instances_to_train = [(id, name) for id, name in enumerate(instance_db.get_bkp_filenames_train())]
+        elif args['training_scheme'] == TRAIN_ON_SINGLE:
+            instances_to_train = [(args['single_instance'], instance_db.get_bkp_filenames_train()[args['single_instance']])]
+
         instances_to_test = [(id, name) for id, name in enumerate(instance_db.get_bkp_filenames_test())]
-        # instances_to_train = [i for i, _ in enumerate(instance_db.get_bkp_filenames())]
-    elif args['training_scheme'] == TRAIN_ON_SINGLE:
-        instances_to_train = [(args['single_instance'], instance_db.get_bkp_filenames_train()[args['single_instance']])]
-        instances_to_test = []
-        
-    dqn = DQN(n_actions=len(BRANCHING_TYPES), n_inputs=7)
-    action_history = []
-    reward_history = []
-    optgap_history = []
+        instances_to_test += [(id, name) for id, name in enumerate(instance_db.get_bkp_filenames_hard())]
 
-    cplex_history = []
+        dqn = DQN(n_actions=len(BRANCHING_TYPES), n_inputs=7)
+        if args['load_model'] is not None:
+            dqn.load_model(args['load_model'])
 
-    for episode in range(episodes):
-        for instance_num, instance_name in instances_to_train:
-            cplex, branch_callback = init_cplex_model(instance_num=instance_num, training=True, verbose=args['verbose'])
+        action_history = []
+        reward_history = []
+        optgap_history = []
+
+        cplex_history = []
+
+        print("-- TRAINING ON INSTANCES")
+
+        for episode in range(episodes):
+            for instance_num, instance_name in instances_to_train:
+                log_string = f"{args['execution_name']}_episode_{episode}_instance_{instance_num}"
+                cplex, branch_callback = init_cplex_model(
+                    instance_num=instance_num, instance_name=instance_name,
+                    training=True, verbose=args['verbose'])
+                branch_callback.branching_strategy = args['branching_strategy']
+
+                cplex.solve()
+
+                action_history = np.append(action_history, branch_callback.action_history)
+                reward_history = np.append(reward_history, branch_callback.reward_history)
+                optgap_history = np.append(optgap_history, branch_callback.optgap_history)
+                cplex_history.append((
+                    instance_name,
+                    branch_callback.nodes_count, 
+                    cplex.solution.MIP.get_mip_relative_gap(),
+                    cplex.solution.MIP.get_best_objective()))
+                
+                if args['should_save_figures']:
+                    plotter.plot_action_history(action_history, BRANCHING_TYPES, log_string)
+                    plotter.plot_reward_history(reward_history, log_string)
+                    plotter.plot_generic(dqn.loss_history, "DQN Loss", log_string)
+                    plotter.plot_generic(optgap_history, "Optimality Gap", log_string)
+
+                if args['should_save_history']:
+                    pd.DataFrame(cplex_history, columns=['instance', 'nodes', 'optgap', 'best_bound']).to_csv(f"data/cplex_history_{log_string}.csv")
+                    pd.DataFrame(action_history).to_csv(f"data/action_history_{log_string}.csv")
+                    pd.DataFrame(reward_history).to_csv(f"data/reward_history_{log_string}.csv")
+                    pd.DataFrame(optgap_history).to_csv(f"data/optgap_history_{log_string}.csv")
+
+                if args['should_save_model']:
+                    dqn.save_model(log_string)
+
+                # pdb.set_trace()
+
+        # for filename, nodes_opened, gap, best_objective in cplex_history:
+        #     print(f"{filename}")
+        #     print(f"-- Nodes opened: {nodes_opened}")
+        #     print(f"-- Optimal gap: {gap}")
+        #     print(f"-- Best objective: {best_objective}")
+        #     print()
+
+        action_history = []
+        reward_history = []
+        optgap_history = []
+        cplex_history = []
+
+        print("-- TESTING ON INSTANCES")
+
+        for instance_num, instance_name in instances_to_test:
+            log_string = f"{args['execution_name']}_TESTING_instance_{instance_num}"
+            cplex, branch_callback = init_cplex_model(
+                instance_num=instance_num, instance_name=instance_name,
+                training=False, verbose=args['verbose'])
             branch_callback.branching_strategy = args['branching_strategy']
 
             cplex.solve()
             
-            action_history = np.append(action_history, branch_callback.action_history)
-            reward_history = np.append(reward_history, branch_callback.reward_history)
-            optgap_history = np.append(optgap_history, branch_callback.optgap_history)
+            action_history = np.array(branch_callback.action_history)
+            reward_history = np.array(branch_callback.reward_history)
+            optgap_history = np.array(branch_callback.optgap_history)
             cplex_history.append((
                 instance_name,
-                branch_callback.nodes_count, 
+                branch_callback.nodes_count_cplex, 
                 cplex.solution.MIP.get_mip_relative_gap(),
                 cplex.solution.MIP.get_best_objective()))
 
-            log_string = f"{args['execution_name']}_episode_{episode}_instance_{instance_num}"
-            plotter.plot_action_history(action_history, BRANCHING_TYPES, log_string)
-            plotter.plot_reward_history(reward_history, log_string)
-            plotter.plot_generic(dqn.loss_history, "DQN Loss", log_string)
-            plotter.plot_generic(optgap_history, "Optimality Gap", log_string)
+            if args['should_save_figures']:
+                plotter.plot_action_history(action_history, BRANCHING_TYPES, log_string)
+                plotter.plot_reward_history(reward_history, log_string)
+                plotter.plot_generic(dqn.loss_history, "dqn_loss", log_string)
+                plotter.plot_generic(optgap_history, "optimality_gap", log_string)
 
-            pd.DataFrame(cplex_history, columns=['instance', 'nodes', 'optgap', 'best_bound']).to_csv(f"data/cplex_history_{log_string}.csv")
-            pd.DataFrame(action_history).to_csv(f"data/action_history_{log_string}.csv")
-            pd.DataFrame(reward_history).to_csv(f"data/reward_history_{log_string}.csv")
-            pd.DataFrame(optgap_history).to_csv(f"data/optgap_history_{log_string}.csv")
-            dqn.save_model(log_string)
+            if args['should_save_history']:
+                pd.DataFrame(cplex_history, columns=['instance', 'nodes', 'optgap', 'best_bound']).to_csv(f"data/cplex_history_{log_string}.csv")
+                pd.DataFrame(action_history).to_csv(f"data/action_history_test_{log_string}.csv")
+                pd.DataFrame(reward_history).to_csv(f"data/reward_history_test_{log_string}.csv")
+                pd.DataFrame(optgap_history).to_csv(f"data/optgap_history_test_{log_string}.csv")
 
-            # pdb.set_trace()
-    # for filename, nodes_opened, gap, best_objective in cplex_history:
-    #     print(f"{filename}")
-    #     print(f"-- Nodes opened: {nodes_opened}")
-    #     print(f"-- Optimal gap: {gap}")
-    #     print(f"-- Best objective: {best_objective}")
-    #     print()
+        print('Done')
 
-
-    action_history = []
-    reward_history = []
-    optgap_history = []
-    cplex_history = []
-
-    for instance_num, instance_name in instances_to_test:
-        cplex, branch_callback = init_cplex_model(instance_num=instance_num, training=False, verbose=args['verbose'])
-        branch_callback.branching_strategy = args['branching_strategy']
-
-        cplex.solve()
-        
-        #TODO: COLHER METRICAS E PLOTAR
-        action_history = np.append(action_history, branch_callback.action_history)
-        reward_history = np.append(reward_history, branch_callback.reward_history)
-        optgap_history = np.append(optgap_history, branch_callback.optgap_history)
-        cplex_history.append((
-            instance_name,
-            branch_callback.nodes_count, 
-            cplex.solution.MIP.get_mip_relative_gap(),
-            cplex.solution.MIP.get_best_objective()))
-
-        log_string = f"{args['execution_name']}_TESTING_instance_{instance_num}"
-        plotter.plot_action_history(action_history, BRANCHING_TYPES, log_string)
-        plotter.plot_reward_history(reward_history, log_string)
-        plotter.plot_generic(dqn.loss_history, "DQN Loss", log_string)
-        plotter.plot_generic(optgap_history, "Optimality Gap", log_string)
-
-        pd.DataFrame(cplex_history, columns=['instance', 'nodes', 'optgap', 'best_bound']).to_csv(f"data/cplex_history_{log_string}.csv")
-        pd.DataFrame(action_history).to_csv(f"data/action_history_{log_string}.csv")
-        pd.DataFrame(reward_history).to_csv(f"data/reward_history_{log_string}.csv")
-        pd.DataFrame(optgap_history).to_csv(f"data/optgap_history_{log_string}.csv")
-
-    print('Done')
+        for filename, nodes_opened, gap, best_objective in cplex_history:
+            print(f"{filename}")
+            print(f"-- Nodes opened: {nodes_opened}")
+            print(f"-- Optimal gap: {gap}")
+            print(f"-- Best objective: {best_objective}")
+            print()
+    except:
+        print(traceback.format_exc())
+        pdb.set_trace()

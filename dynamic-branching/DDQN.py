@@ -124,3 +124,10 @@ class DQN:
 
     def save_model(self, fn):
         self.model.save('dqn-models/'+fn)
+    
+    def load_model(self, filename):
+        self.model = tf.keras.models.load_model(filename)
+    
+if __name__ == "__main__":
+    dqn = DQN(n_actions=len(BRANCHING_TYPES), n_inputs=7)
+    pdb.set_trace()
