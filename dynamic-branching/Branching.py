@@ -306,9 +306,12 @@ if __name__ == "__main__":
     episodes = args['episodes']
 
     if args['training_scheme'] == TRAIN_ON_EVERY:
-        instances_to_train = [i for i, _ in enumerate(instance_db.get_bkp_filenames())]
+        instances_to_train = [i for i, _ in enumerate(instance_db.get_bkp_filenames_train())]
+        instances_to_test = [i for i, _ in enumerate(instance_db.get_bkp_filenames_test())]
+        # instances_to_train = [i for i, _ in enumerate(instance_db.get_bkp_filenames())]
     elif args['training_scheme'] == TRAIN_ON_SINGLE:
         instances_to_train = [args['single_instance']]
+        instances_to_test = []
         
     dqn = DQN(n_actions=len(BRANCHING_TYPES), n_inputs=7)
     action_history = []
@@ -344,6 +347,14 @@ if __name__ == "__main__":
         print(f"-- Optimal gap: {gap}")
         print(f"-- Best objective: {best_objective}")
         print()
+
+    for instance_num in instances_to_test:
+        cplex, branch_callback = init_cplex_model(instance_num=instance_num, verbose=args['verbose'])
+        branch_callback.branching_strategy = args['branching_strategy']
+
+        cplex.solve()
+        
+        #TODO: COLHER METRICAS E PLOTAR
 
     pdb.set_trace()
     print('Done')
