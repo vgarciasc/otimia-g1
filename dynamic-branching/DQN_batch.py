@@ -22,14 +22,6 @@ from keras.models import Sequential
 from keras.layers import Dense, Dropout
 from keras.optimizers import Adam
 
-# multthreading imports
-import threading
-from multiprocessing import Pool
-
-# client/server imports
-from http import client
-import socket
-
 # cplex imports
 from docplex.mp.model import Model
 import cplex as CPX
@@ -37,6 +29,7 @@ import cplex.callbacks as CPX_CB
 from cplex.callbacks import SolutionStrategy, MIPCallback, BranchCallback
 
 import instance_db
+import plotter
 
 BRANCHING_TYPES = ["Most Fractional", "Random", "Minimum Infeasibility", "Maximum Infeasibility", "Pseudo-cost", "Strong", "Pseudo-reduced-cost"]
 
@@ -83,7 +76,8 @@ class DQN:
             return self.action_space.sample()
         # q_values = self.model.predict(state, verbose=0)
         q_values = self.model(state).numpy()
-        return np.argmax(q_values[0])
+        best_action = np.argmax(q_values[0])
+        return best_action
 
     def remember(self, state, action, reward, next_state, done):
         state = np.array([state['objval']])
@@ -150,6 +144,9 @@ class BranchCB(CPX_CB.BranchCallback):
         self.times_called = 0
         self.report_count = 0
         self.branches_count = 0
+        self.action_history = []
+        self.reward_history = []
+        self.optgap_history = []
     
     def __call__(self):
         # Counter of how many times the callback was called
@@ -230,6 +227,9 @@ class BranchCB(CPX_CB.BranchCallback):
             last_action = last_node_data['action']
             last_reward = dqn.calc_reward(last_state, state)
 
+            self.action_history.append(last_action)
+            self.reward_history.append(last_reward)
+
             # Debugging
             info = (last_state, last_action, last_reward, state['objval'], False)
             print(info)
@@ -261,26 +261,26 @@ def init_cplex_model():
     cplex.parameters.preprocessing.relax.set(0) # Decides whether LP presolve is applied to the root relaxation in a mixed integer program (MIP). Sometimes additional reductions can be made beyond any MIP presolve reductions that were already done. By default, CPLEX applies presolve to the initial relaxation in order to hasten time to the initial solution.
     cplex.parameters.preprocessing.numpass.set(0) # Limits the number of pre-resolution passes that CPLEX makes during pre-processing. When this parameter is set to a positive value, pre-resolution is applied for the specified number of times or until no further reduction is possible.
 
-    cplex.parameters.advance.set(0) # If 1 or 2, this parameter specifies that CPLEX should use advanced starting information when it initiates optimization.
-    cplex.parameters.preprocessing.qcpduals.set(0) # This parameter determines whether CPLEX preprocesses a quadratically constrained program (QCP) so that the user can access dual values for the QCP.
-    cplex.parameters.preprocessing.qpmakepsd.set(0) # Decides whether CPLEX will attempt to reformulate a MIQP or MIQCP model that contains only binary variables. When this feature is active, adjustments will be made to the elements of a quadratic matrix that is not nominally positive semi-definite (PSD, as required by CPLEX for all QP and most QCP formulations), to make it PSD, and CPLEX will also attempt to tighten an already PSD matrix for better numerical behavior.
-    cplex.parameters.preprocessing.qtolin.set(0) # This parameter switches on or off linearization of the quadratic terms in the objective function of a quadratic program (QP) or of a mixed integer quadratic program (MIQP) during preprocessing.
-    cplex.parameters.preprocessing.repeatpresolve.set(0) # Specifies whether to re-apply presolve, with or without cuts, to a MIP model after processing at the root is otherwise complete.
-    cplex.parameters.preprocessing.dual.set(0) # Decides whether the CPLEX pre-solution should pass the primal or dual linear programming problem to the linear programming optimization algorithm.
-    cplex.parameters.preprocessing.fill.set(0) # Limits number of variable substitutions by the aggregator. If the net result of a single substitution is more nonzeros than this value, the substitution is not made.
-    cplex.parameters.preprocessing.coeffreduce.set(0) # Decides how coefficient reduction is used. Coefficient reduction improves the objective value of the initial (and subsequent) LP relaxations solved during branch and cut by reducing the number of non-integral vertices. By default, CPLEX applies coefficient reductions during preprocessing of a model.
-    cplex.parameters.preprocessing.boundstrength.set(0) # Decides whether to apply bound strengthening in mixed integer programs (MIPs). Bound strengthening tightens the bounds on variables, perhaps to the point where the variable can be fixed and thus removed from consideration during branch and cut.
-    cplex.parameters.preprocessing.dependency.set(0) # Decides whether to activate the dependency checker. If on, the dependency checker searches for dependent rows during preprocessing. If off, dependent rows are not identified.
-    cplex.parameters.preprocessing.folding.set(0) # Decides whether folding will be automatically executed, during the preprocessing phase, in a LP model.
-    cplex.parameters.preprocessing.symmetry.set(0) # Decides whether symmetry breaking reductions will be automatically executed, during the preprocessing phase, in either a MIP or LP model.
-    cplex.parameters.preprocessing.sos1reform.set(-1) # This parameter allows you to control the reformulation of special ordered sets of type 1 (SOS1), which can be applied during the solution process of problems containing these sets.
-    cplex.parameters.preprocessing.sos2reform.set(-1) # This parameter allows you to control the reformulation of special ordered sets of type 2 (SOS2), which can be applied during the solution process of problems containing these sets.
-    cplex.parameters.mip.cuts.mircut(-1) # Decides whether or not to generate MIR cuts (mixed integer rounding cuts) for the problem.
+    # cplex.parameters.advance.set(0) # If 1 or 2, this parameter specifies that CPLEX should use advanced starting information when it initiates optimization.
+    # cplex.parameters.preprocessing.qcpduals.set(0) # This parameter determines whether CPLEX preprocesses a quadratically constrained program (QCP) so that the user can access dual values for the QCP.
+    # cplex.parameters.preprocessing.qpmakepsd.set(0) # Decides whether CPLEX will attempt to reformulate a MIQP or MIQCP model that contains only binary variables. When this feature is active, adjustments will be made to the elements of a quadratic matrix that is not nominally positive semi-definite (PSD, as required by CPLEX for all QP and most QCP formulations), to make it PSD, and CPLEX will also attempt to tighten an already PSD matrix for better numerical behavior.
+    # cplex.parameters.preprocessing.qtolin.set(0) # This parameter switches on or off linearization of the quadratic terms in the objective function of a quadratic program (QP) or of a mixed integer quadratic program (MIQP) during preprocessing.
+    # cplex.parameters.preprocessing.repeatpresolve.set(0) # Specifies whether to re-apply presolve, with or without cuts, to a MIP model after processing at the root is otherwise complete.
+    # cplex.parameters.preprocessing.dual.set(0) # Decides whether the CPLEX pre-solution should pass the primal or dual linear programming problem to the linear programming optimization algorithm.
+    # cplex.parameters.preprocessing.fill.set(0) # Limits number of variable substitutions by the aggregator. If the net result of a single substitution is more nonzeros than this value, the substitution is not made.
+    # cplex.parameters.preprocessing.coeffreduce.set(0) # Decides how coefficient reduction is used. Coefficient reduction improves the objective value of the initial (and subsequent) LP relaxations solved during branch and cut by reducing the number of non-integral vertices. By default, CPLEX applies coefficient reductions during preprocessing of a model.
+    # cplex.parameters.preprocessing.boundstrength.set(0) # Decides whether to apply bound strengthening in mixed integer programs (MIPs). Bound strengthening tightens the bounds on variables, perhaps to the point where the variable can be fixed and thus removed from consideration during branch and cut.
+    # cplex.parameters.preprocessing.dependency.set(0) # Decides whether to activate the dependency checker. If on, the dependency checker searches for dependent rows during preprocessing. If off, dependent rows are not identified.
+    # cplex.parameters.preprocessing.folding.set(0) # Decides whether folding will be automatically executed, during the preprocessing phase, in a LP model.
+    # cplex.parameters.preprocessing.symmetry.set(0) # Decides whether symmetry breaking reductions will be automatically executed, during the preprocessing phase, in either a MIP or LP model.
+    # cplex.parameters.preprocessing.sos1reform.set(-1) # This parameter allows you to control the reformulation of special ordered sets of type 1 (SOS1), which can be applied during the solution process of problems containing these sets.
+    # cplex.parameters.preprocessing.sos2reform.set(-1) # This parameter allows you to control the reformulation of special ordered sets of type 2 (SOS2), which can be applied during the solution process of problems containing these sets.
+    # cplex.parameters.mip.cuts.mircut(-1) # Decides whether or not to generate MIR cuts (mixed integer rounding cuts) for the problem.
 
     # Registering the branching callback
     states_to_process = []
-    branch_instance = cplex.register_callback(BranchCB)
-    branch_instance.init(states_to_process)
+    branch_callback = cplex.register_callback(BranchCB)
+    branch_callback.init(states_to_process)
 
     # Adding variables
     x = cplex.integer_var_matrix(N, K, name="x")
@@ -304,7 +304,7 @@ def init_cplex_model():
     # Displaying final information
     # cplex_m.print_information()
 
-    return cplex
+    return cplex, branch_callback
 
 if __name__ == "__main__":
     episodes = 1
@@ -312,5 +312,7 @@ if __name__ == "__main__":
     dqn = DQN()
 
     for episode in range(episodes):
-        cplex = init_cplex_model()
+        cplex, branch_callback = init_cplex_model()
         cplex.solve()
+        plotter.plot_action_history(branch_callback.action_history, BRANCHING_TYPES)
+        plotter.plot_reward_history(branch_callback.reward_history)

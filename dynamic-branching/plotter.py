@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-def plot_action_history(action_history, branching_types, episode, execution_name):
+def plot_action_history(action_history, branching_types):
     branching_strats_history = []
     for i, branching in enumerate(branching_types):
         branching_strats_history.append([])
@@ -20,12 +20,9 @@ def plot_action_history(action_history, branching_types, episode, execution_name
     plt.ylabel("Frequency")
     plt.xlabel("Iteration")
     plt.legend()
-    #plt.savefig("actions"+str(episode)+".png")
-    plt.savefig(f"data/actions_{execution_name}_{episode}.png")
-    # plt.show()
-    plt.close('all')
+    plt.show()
 
-def plot_reward_history(reward_history, episode, execution_name):
+def plot_reward_history(reward_history):
     average_reward = []
     total_reward = 0
 
@@ -35,18 +32,7 @@ def plot_reward_history(reward_history, episode, execution_name):
     
     plt.title("Reward over time")
     plt.plot(average_reward, color='blue', label='Average reward')
-    # plt.plot(reward_history, color='cyan', linestyle='dashed', label='Absolute reward')
+    plt.plot(reward_history, color='cyan', linestyle='dashed', label='Absolute reward')
     plt.xlabel("Iteration")
     plt.legend()
-    plt.savefig(f"data/rewards_{execution_name}_{episode}")
-    # plt.show()
-    plt.close('all')
-
-def plot_generic(array, s, episode, execution_name):
-  plt.title(s)
-  plt.plot(array)
-  plt.xlabel("Iteration")
-  plt.legend()
-  plt.savefig(f"data/{s}_{execution_name}_{episode}")
-  plt.close('all')
-    
+    plt.show()
