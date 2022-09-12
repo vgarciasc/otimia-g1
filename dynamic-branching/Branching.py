@@ -169,7 +169,10 @@ class BranchCB(CPX_CB.BranchCallback):
         ]])
 
         if self.branching_strategy == BRANCHING_RL:
-            action = dqn.get_action(state)
+            if self.training:
+                action = dqn.get_action(state)
+            else:
+                action = dqn.target_model(state)
         else:
             action = self.branching_strategy
 
@@ -177,10 +180,6 @@ class BranchCB(CPX_CB.BranchCallback):
         if last_node_data != None:
             node_data['branch_history'] = last_node_data['branch_history'][:]
 
-        # Debugging
-        # print(f"Node_id: {node_id}, state: {state}")
-        # print(f'Branching type {BRANCHING_TYPES[action]}, -- Times called: ', self.times_called)
-        
         if self.get_num_branches() == 0:
             return
         else:
@@ -202,20 +201,14 @@ class BranchCB(CPX_CB.BranchCallback):
             last_state = last_node_data['state']
             last_action = last_node_data['action']
             last_reward = dqn.calc_reward(last_state, state)
-            self.get_MIP_relative_gap()
             self.action_history.append(last_action)
             self.reward_history.append(last_reward)
             self.optgap_history.append(gap)
-
-            dqn.remember(last_state, last_action, last_reward, state, False)
-            dqn.replay()
-            dqn.target_train()
-
-            # Debugging
-            #info = (last_state, last_action, last_reward, state[0], False)
-            #print(info)
-            #print(f"Reward: {last_reward}")
-            # pdb.set_trace()
+            if self.training:
+                dqn.remember(last_state, last_action, last_reward, state, False)           
+                if self.times_called % 32 == 0:
+                    dqn.replay()
+                    dqn.target_train()
 
 def init_cplex_model(instance_num, training, verbose=False):
     # MULTIPLE KNAPSACK
@@ -284,12 +277,12 @@ def init_cplex_model(instance_num, training, verbose=False):
     branch_callback.init(states_to_process)
     branch_callback.ordered_var_idx_lst = list(range(num_vars))
     branch_callback.c = cplex
+    branch_callback.training = training
     branch_callback.num_infeasible_left = np.zeros(num_vars)
     branch_callback.num_infeasible_right = np.zeros(num_vars)
     branch_callback.times_called = 0
     branch_callback.THETA = 200
     branch_callback.max_iterations = 500
-    branch_callback.model = None
 
     return cplex, branch_callback
 
@@ -335,13 +328,18 @@ if __name__ == "__main__":
                 branch_callback.nodes_count, 
                 cplex.solution.MIP.get_mip_relative_gap(),
                 cplex.solution.MIP.get_best_objective()))
-            plotter.plot_action_history(action_history, BRANCHING_TYPES, episode, args['execution_name']+f"episode_{episode}")
-            plotter.plot_reward_history(reward_history, episode, args['execution_name']+f"episode_{episode}")
-            plotter.plot_generic(dqn.loss_history, "DQN Loss", episode, args['execution_name']+f"episode_{episode}")
-            plotter.plot_generic(optgap_history, "Optimality Gap", episode, args['execution_name']+f"episode_{episode}")
-            df = pd.DataFrame(cplex_history, columns=['instance', 'nodes', 'optgap', 'best_bound'])
-            df.to_csv("data/cplex_history.csv")
-            dqn.save_model(args['execution_name']+f"episode_{episode}")
+
+            log_string = f"{args['execution_name']}_episode_{episode}_instance_{instance_num}"
+            plotter.plot_action_history(action_history, BRANCHING_TYPES, log_string)
+            plotter.plot_reward_history(reward_history, log_string)
+            plotter.plot_generic(dqn.loss_history, "DQN Loss", log_string)
+            plotter.plot_generic(optgap_history, "Optimality Gap", log_string)
+
+            pd.DataFrame(cplex_history, columns=['instance', 'nodes', 'optgap', 'best_bound']).to_csv(f"data/cplex_history_{log_string}.csv")
+            pd.DataFrame(action_history).to_csv(f"data/action_history_{log_string}.csv")
+            pd.DataFrame(reward_history).to_csv(f"data/reward_history_{log_string}.csv")
+            pd.DataFrame(optgap_history).to_csv(f"data/optgap_history_{log_string}.csv")
+            dqn.save_model(log_string)
 
             # pdb.set_trace()
     # for filename, nodes_opened, gap, best_objective in cplex_history:
@@ -351,13 +349,37 @@ if __name__ == "__main__":
     #     print(f"-- Best objective: {best_objective}")
     #     print()
 
-    for instance_num in instances_to_test:
+
+    action_history = []
+    reward_history = []
+    optgap_history = []
+    cplex_history = []
+
+    for instance_num, instance_name in instances_to_test:
         cplex, branch_callback = init_cplex_model(instance_num=instance_num, training=False, verbose=args['verbose'])
         branch_callback.branching_strategy = args['branching_strategy']
 
         cplex.solve()
         
         #TODO: COLHER METRICAS E PLOTAR
+        action_history = np.append(action_history, branch_callback.action_history)
+        reward_history = np.append(reward_history, branch_callback.reward_history)
+        optgap_history = np.append(optgap_history, branch_callback.optgap_history)
+        cplex_history.append((
+            instance_name,
+            branch_callback.nodes_count, 
+            cplex.solution.MIP.get_mip_relative_gap(),
+            cplex.solution.MIP.get_best_objective()))
 
-    pdb.set_trace()
+        log_string = f"{args['execution_name']}_TESTING_instance_{instance_num}"
+        plotter.plot_action_history(action_history, BRANCHING_TYPES, log_string)
+        plotter.plot_reward_history(reward_history, log_string)
+        plotter.plot_generic(dqn.loss_history, "DQN Loss", log_string)
+        plotter.plot_generic(optgap_history, "Optimality Gap", log_string)
+
+        pd.DataFrame(cplex_history, columns=['instance', 'nodes', 'optgap', 'best_bound']).to_csv(f"data/cplex_history_{log_string}.csv")
+        pd.DataFrame(action_history).to_csv(f"data/action_history_{log_string}.csv")
+        pd.DataFrame(reward_history).to_csv(f"data/reward_history_{log_string}.csv")
+        pd.DataFrame(optgap_history).to_csv(f"data/optgap_history_{log_string}.csv")
+
     print('Done')
