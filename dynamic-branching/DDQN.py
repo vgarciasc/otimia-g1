@@ -123,4 +123,4 @@ class DQN:
             return T*b
 
     def save_model(self, fn):
-        self.model.save(fn)
+        self.model.save('dqn-models/'+fn)
