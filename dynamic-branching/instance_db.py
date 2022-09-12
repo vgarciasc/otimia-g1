@@ -35,11 +35,11 @@ def get_mkp_instance(id):
     return v, w, C, K, N
 
 def get_bkp_filenames_hard():
-    return os.listdir('files\instances_01_KP_HARD')
+    return os.listdir('dynamic-branching\\files\instances_01_KP_HARD')
 
 def get_bkp_instance_hard(id=0):
     files = get_bkp_filenames_hard()
-    return read_instance_from_file_hard("files/instances_01_KP_HARD/" + files[id])
+    return read_instance_from_file_hard("dynamic-branching/instances_01_KP_HARD/" + files[id])
 
 def read_instance_from_file_hard(filepath):
     with open(filepath) as f:

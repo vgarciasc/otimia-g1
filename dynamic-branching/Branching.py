@@ -14,6 +14,7 @@ from DDQN import DQN
 import instance_db
 import utils
 import plotter
+import csv  
 
 BRANCHING_TYPES = ["Most Infeasible", "Random", "Strong", "Pseudo-cost"]
 TRAIN_ON_EVERY = 0
@@ -103,6 +104,8 @@ class BranchCB(CPX_CB.BranchCallback):
 
             self.make_branch(objval, variables=[branch], constraints=[], node_data=node_data_clone)
 
+        aaa = ""
+
     def branch_strong(self, node_data):
         candidate_idxs = utils.get_candidates(self)
         if len(candidate_idxs) == 0:
@@ -125,6 +128,8 @@ class BranchCB(CPX_CB.BranchCallback):
             node_data_clone['branch_history'].append(branch)
 
             self.make_branch(objval, variables=[branch], constraints=[], node_data=node_data_clone)
+
+        aaa = ""
 
     def branch_pseudocost(self, node_data):
         objval = self.get_objective_value()
@@ -215,6 +220,8 @@ class BranchCB(CPX_CB.BranchCallback):
         # if self.report_count % 500 == 0 and self.report_count > 0:
         #     pd.DataFrame(self.states_to_process).to_csv('saved/states_to_process.csv')  
 
+        aaa = ""
+
 def init_cplex_model(instance_num, verbose=False):
     # MULTIPLE KNAPSACK
     # v, w, C, K, N = instance_db.get_mkp_instance(instance_num)
@@ -297,20 +304,48 @@ if __name__ == "__main__":
     reward_history = []
     optgap_history = []
 
-    for episode in range(episodes):
-        for instance_num in instances_to_train:
-            cplex, branch_callback = init_cplex_model(instance_num=instance_num, verbose=args['verbose'])
-            branch_callback.branching_strategy = args['branching_strategy']
 
-            cplex.solve()
-            
-            action_history = np.append(action_history, branch_callback.action_history)
-            reward_history = np.append(reward_history, branch_callback.reward_history)
-            optgap_history = np.append(optgap_history, branch_callback.optgap_history)
+    header = ['branching_strategy', 'action_history', 'reward_history', 'optgap_history',
+                'episode',
+                'execution_name',
+                'dqn.loss_history',
+                'optgap_history']
 
-            plotter.plot_action_history(action_history, BRANCHING_TYPES, episode, args['execution_name'])
-            plotter.plot_reward_history(reward_history, episode, args['execution_name'])
-            plotter.plot_generic(dqn.loss_history, "DQN Loss", episode, args['execution_name'])
-            plotter.plot_generic(optgap_history, "Optimality Gap", episode, args['execution_name'])
+    from datetime import datetime
+
+    now = datetime.now()
+    dt_string = now.strftime("%Y-%m-%d_%H-%M-%S")
+    csv_name = dt_string+".csv"
+
+    with open("data/".csv_name, 'w', newline='', encoding='UTF8') as f:
+        writer = csv.writer(f)
+        # write the header
+        writer.writerow(header)
+
+        for episode in range(episodes):
+            for instance_num in instances_to_train:
+                cplex, branch_callback = init_cplex_model(instance_num=instance_num, verbose=args['verbose'])
+                branch_callback.branching_strategy = args['branching_strategy']
+
+                cplex.solve()
+                
+                action_history = np.append(action_history, branch_callback.action_history)
+                reward_history = np.append(reward_history, branch_callback.reward_history)
+                optgap_history = np.append(optgap_history, branch_callback.optgap_history)
+
+                plotter.plot_action_history(action_history, BRANCHING_TYPES, episode, args['execution_name'])
+                plotter.plot_reward_history(reward_history, episode, args['execution_name'])
+                plotter.plot_generic(dqn.loss_history, "DQN Loss", episode, args['execution_name'])
+                plotter.plot_generic(optgap_history, "Optimality Gap", episode, args['execution_name'])
+                
+                # write the data
+                writer.writerow([   branch_callback.branching_strategy, 
+                                    branch_callback.action_history,
+                                    branch_callback.reward_history,
+                                    branch_callback.optgap_history,
+                                    episode,
+                                    args['execution_name'],
+                                    dqn.loss_history,
+                                    optgap_history  ])
         
     print('Done')
